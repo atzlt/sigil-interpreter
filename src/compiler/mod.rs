@@ -1,2 +1,2 @@
-pub mod compiler;
+pub mod compile;
 mod lexer;

@@ -1,6 +1,27 @@
+use lasso::{Rodeo, Spur};
 use logos::Logos;
 
-#[derive(Debug, Clone, PartialEq, Logos, Default)]
+#[derive(Debug)]
+pub struct LexerExtras {
+    pub interner: Rodeo,
+}
+
+impl Default for LexerExtras {
+    fn default() -> Self {
+        LexerExtras {
+            interner: Rodeo::new(),
+        }
+    }
+}
+
+impl LexerExtras {
+    pub fn resolve(&self, spur: Spur) -> &str {
+        self.interner.resolve(&spur)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Logos, Default)]
+#[logos(extras = LexerExtras)]
 #[logos(skip r"[ \t\n\r]+")]
 #[logos(skip r"//[^\n]*")]
 pub enum Token {
@@ -39,12 +60,15 @@ pub enum Token {
 
     #[regex(r#""([^"\\]|\\.)*""#, |lex| {
         let raw = lex.slice();
-        raw[1..raw.len()-1].to_string()
+        let s = &raw[1..raw.len()-1];
+        lex.extras.interner.get_or_intern(s)
     })]
-    String(String),
+    String(Spur),
 
-    #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*", |lex| lex.slice().to_string())]
-    Identifier(String),
+    #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*", |lex| {
+        lex.extras.interner.get_or_intern(lex.slice())
+    })]
+    Identifier(Spur),
 
     // ── Operators ────
     #[token("+")]
@@ -101,5 +125,5 @@ pub enum Token {
 
     // ── Special ────
     #[default]
-    EOF,
+    Eof,
 }

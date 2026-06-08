@@ -1,9 +1,8 @@
 use anyhow::{Result, bail};
+use lasso::Spur;
 use logos::Logos;
 
-use crate::{
-    compiler::lexer::Token, value::Value, vm::Chunk,
-};
+use crate::{compiler::lexer::Token, value::Value, vm::Chunk};
 
 macro_rules! emit {
     ($chunk:expr, $op:ident) => {
@@ -52,17 +51,19 @@ pub struct Compiler<'a> {
     lexer: logos::Lexer<'a, Token>,
     chunk: Chunk,
     current: Token,
-    reg_next: u8,
     reg_free: Vec<u8>,
 }
 
 pub fn compile(source: &str) -> Result<Chunk> {
+    let mut free = Vec::with_capacity(256);
+    for i in (0..=255).rev() {
+        free.push(i);
+    }
     let mut c = Compiler {
         lexer: Token::lexer(source),
         chunk: Chunk::new(),
         current: Token::default(),
-        reg_next: 0,
-        reg_free: Vec::with_capacity(32),
+        reg_free: free,
     };
     c.advance();
     let result_reg = c.expression()?;
@@ -74,7 +75,7 @@ impl Compiler<'_> {
     // ── Token handling ──
 
     fn advance(&mut self) {
-        self.current = self.lexer.next().and_then(|r| r.ok()).unwrap_or(Token::EOF);
+        self.current = self.lexer.next().and_then(|r| r.ok()).unwrap_or(Token::Eof);
     }
 
     fn check(&self, tok: &Token) -> bool {
@@ -101,23 +102,26 @@ impl Compiler<'_> {
     }
 
     fn current_name(&self) -> String {
-        format!("{:?}", self.current)
+        match &self.current {
+            Token::Identifier(spur) | Token::String(spur) => {
+                self.lexer.extras.interner.resolve(spur).to_string()
+            }
+            other => format!("{:?}", other),
+        }
     }
 
     // ── Register allocation ──
 
     fn alloc_reg(&mut self) -> u8 {
-        if let Some(r) = self.reg_free.pop() {
-            r
-        } else {
-            let reg = self.reg_next;
-            self.reg_next += 1;
-            reg
-        }
+        self.reg_free
+            .pop()
+            .expect("register overflow: all 256 registers in use")
     }
 
     fn free_reg(&mut self, reg: u8) {
-        self.reg_free.push(reg);
+        if !self.reg_free.contains(&reg) {
+            self.reg_free.push(reg);
+        }
     }
 
     // ── Entry points ──
@@ -138,7 +142,7 @@ impl Compiler<'_> {
             if bp < min_bp {
                 break;
             }
-            let op = self.current.clone();
+            let op = self.current;
             self.advance();
             let rhs = self.parse_precedence(bp + 1)?;
             lhs = self.emit_binary(&op, lhs, rhs);
@@ -154,10 +158,10 @@ impl Compiler<'_> {
                 self.advance();
                 Ok(self.emit_number(val))
             }
-            Token::String(s) => {
-                let val = s.clone();
+            Token::String(spur) => {
+                let spur = *spur;
                 self.advance();
-                Ok(self.emit_string(val))
+                Ok(self.emit_string(spur))
             }
             Token::True => {
                 self.advance();
@@ -172,7 +176,7 @@ impl Compiler<'_> {
                 Ok(self.emit_nil())
             }
             Token::Identifier(name) => {
-                let name = name.clone();
+                let name = *name;
                 self.advance();
                 Ok(self.emit_identifier(name))
             }
@@ -207,7 +211,8 @@ impl Compiler<'_> {
         reg
     }
 
-    fn emit_string(&mut self, s: String) -> u8 {
+    fn emit_string(&mut self, spur: Spur) -> u8 {
+        let s = self.lexer.extras.interner.resolve(&spur).to_string();
         let k = self.chunk.add_constant(Value::String(s));
         let reg = self.alloc_reg();
         emit!(self.chunk, LOADK, reg, wide k);
@@ -226,7 +231,7 @@ impl Compiler<'_> {
         reg
     }
 
-    fn emit_identifier(&mut self, _name: String) -> u8 {
+    fn emit_identifier(&mut self, _name: Spur) -> u8 {
         // TODO: variable lookup → register. See Phase 3.
         self.emit_nil()
     }

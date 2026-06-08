@@ -4,6 +4,7 @@ use crate::value::Value;
 
 pub type HostFn = fn(&[Value]) -> Value;
 
+#[derive(Debug, Default)]
 pub struct FunctionRegistry {
     entries: AHashMap<String, HostFn>,
 }

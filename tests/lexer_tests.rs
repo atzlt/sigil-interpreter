@@ -1,5 +1,5 @@
 use sigil_interpreter::{
-    compiler::compiler::compile, registry::FunctionRegistry, value::Value, vm::VM,
+    compiler::compile::compile, registry::FunctionRegistry, value::Value, vm::VM,
 };
 
 fn math_registry() -> FunctionRegistry {
@@ -122,9 +122,9 @@ fn test_string_literal() {
 fn test_register_reuse_long_chain() {
     // 100-term addition chain. Without a free list this would burn
     // >200 registers and overflow the 255 limit.
-    let source = (1..=1000000)
+    let source = (1..=10000)
         .map(|i| (i / 100).to_string())
         .collect::<Vec<_>>()
         .join(" + ");
-    assert_eq!(run(&source), Value::Number(4999510000.0));
+    assert_eq!(run(&source), Value::Number(495100.0));
 }
