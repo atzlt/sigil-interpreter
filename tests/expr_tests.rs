@@ -1,5 +1,8 @@
 use sigil_interpreter::{
-    compiler::compile::compile, registry::FunctionRegistry, value::Value, vm::VM,
+    compiler::compile::{compile},
+    registry::FunctionRegistry,
+    value::Value,
+    vm::VM,
 };
 
 fn math_registry() -> FunctionRegistry {

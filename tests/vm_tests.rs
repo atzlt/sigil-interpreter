@@ -25,10 +25,9 @@ fn test_loadk_and_move() {
     chunk.emit(2); // dst R2
     chunk.emit(0); // src R0
 
-    // RETURN R2, 1
+    // RETURN R2
     chunk.emit_opcode(RETURN);
-    chunk.emit(2); // first_reg
-    chunk.emit(1); // count
+    chunk.emit(2);
 
     let registry = FunctionRegistry::new();
     let mut vm = VM::new();
@@ -49,7 +48,6 @@ fn test_bool_and_nil() {
 
     chunk.emit_opcode(RETURN);
     chunk.emit(0);
-    chunk.emit(1);
 
     let registry = FunctionRegistry::new();
     let mut vm = VM::new();
@@ -77,7 +75,6 @@ fn test_jmp() {
     chunk.emit_wide(k10);
 
     chunk.emit_opcode(RETURN);
-    chunk.emit(1);
     chunk.emit(1);
 
     let registry = FunctionRegistry::new();
@@ -108,7 +105,6 @@ fn test_test_true() {
     chunk.emit_wide(k99);
 
     chunk.emit_opcode(RETURN);
-    chunk.emit(1);
     chunk.emit(1);
 
     let registry = FunctionRegistry::new();
@@ -147,7 +143,6 @@ fn test_test_false() {
 
     chunk.emit_opcode(RETURN);
     chunk.emit(2);
-    chunk.emit(1);
 
     let registry = FunctionRegistry::new();
     let mut vm = VM::new();

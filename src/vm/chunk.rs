@@ -147,11 +147,9 @@ impl fmt::Display for Chunk {
                     writeln!(f, "CALLC   R{dst} R{func} [{}]", args.join(", "))?;
                 }
                 OpCode::RETURN => {
-                    let first = code[pos];
+                    let reg = code[pos];
                     pos += 1;
-                    let count = code[pos];
-                    pos += 1;
-                    writeln!(f, "RETURN  R{first} {count}")?;
+                    writeln!(f, "RETURN  R{reg}")?;
                 }
                 OpCode::JMP => {
                     let offset = i16::from_le_bytes([code[pos], code[pos + 1]]);

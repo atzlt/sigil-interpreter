@@ -117,9 +117,8 @@ impl<'a> Compiler<'a> {
 
     // ── Bytecode emission ──
 
-    fn emit_identifier(&mut self, _name: Spur) -> Result<u8> {
-        // TODO: variable lookup → register. See Phase 3.
-        self.emit_nil()
+    fn emit_identifier(&mut self, name: Spur) -> Result<u8> {
+        self.resolve_local(name)
     }
 
     fn emit_number(&mut self, n: f64) -> Result<u8> {

@@ -57,14 +57,18 @@ impl LocalsTracker {
         return Ok(self.locals[scanner].reg);
     }
 
-    fn exit_scope(&mut self) {
+    fn exit_scope(&mut self) -> Vec<u8> {
         assert!(self.current_depth > 0);
         self.current_depth -= 1;
+        let mut freed = Vec::new();
         while let Some(loc) = self.locals.last()
             && loc.depth > self.current_depth
         {
+            freed.push(loc.reg);
             self.locals.pop();
         }
+        freed.reverse();
+        freed
     }
 }
 
@@ -87,6 +91,7 @@ impl<'a> Compiler<'a> {
     }
 
     pub(super) fn exit_scope(&mut self) {
-        self.locals.exit_scope();
+        let freed = self.locals.exit_scope();
+        self.regs.free_held(&freed);
     }
 }

@@ -71,17 +71,33 @@ pub struct Compiler<'a> {
     pub(super) locals: LocalsTracker,
 }
 
-pub fn compile(source: &str) -> Result<Chunk> {
-    let mut c = Compiler {
+fn new_compiler(source: &str) -> Compiler<'_> {
+    Compiler {
         lexer: Token::lexer(source).spanned(),
         chunk: Chunk::new(),
         current: (Token::default(), Span::default()),
         regs: RegisterTracker::new(256),
         locals: LocalsTracker::new(),
-    };
+    }
+}
+
+pub fn compile(source: &str) -> Result<Chunk> {
+    let mut c = new_compiler(source);
     c.advance()?;
     let result_reg = c.expression()?;
-    emit!(c.chunk, RETURN, result_reg, 1_u8);
+    emit!(c.chunk, RETURN, result_reg);
+    Ok(c.chunk)
+}
+
+pub fn compile_program(source: &str) -> Result<Chunk> {
+    let mut c = new_compiler(source);
+    c.advance()?;
+    while !c.check(&Token::Eof) {
+        c.statement()?;
+    }
+    let nil_reg = c.alloc_temp()?;
+    emit!(c.chunk, LOADNIL, nil_reg);
+    emit!(c.chunk, RETURN, nil_reg);
     Ok(c.chunk)
 }
 

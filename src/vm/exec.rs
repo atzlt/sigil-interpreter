@@ -95,12 +95,8 @@ impl VM {
                     self.stack[dst] = result;
                 }
                 RETURN => {
-                    let first = chunk.read() as usize;
-                    let count = chunk.read() as usize;
-                    if count == 0 {
-                        return Ok(Value::Nil);
-                    }
-                    return Ok(self.stack[first].clone());
+                    let reg = chunk.read() as usize;
+                    return Ok(self.stack[reg].clone());
                 }
                 JMP => {
                     let ip = chunk.ip as isize - 1;

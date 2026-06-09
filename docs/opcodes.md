@@ -77,13 +77,13 @@ stack[dst] = stack[func]([stack[arg0], stack[arg1], ...])
 ## Control Flow
 
 ### RETURN `0x06`
-| op | first | count |
-|----|-----------|----------|
+| op | reg |
+|----|--------|
 
-Returns `count` values starting from `stack[first]`. In top-level code, halts the VM and returns the first value. `count == 0` returns `nil`.
+Stops execution and returns the value in `stack[reg]`.
 
 ```
-return stack[first .. first + count]
+return stack[reg]
 ```
 
 ---
