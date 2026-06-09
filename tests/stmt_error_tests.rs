@@ -119,3 +119,17 @@ fn test_assignment_to_undefined_var_in_block() {
     let err = compile_err(r"{ x = 1; }");
     assert!(matches!(err, CompileError::UndefinedVariable { .. }));
 }
+
+// ── break errors ──
+
+#[test]
+fn test_break_outside_loop() {
+    let err = compile_err(r"break;");
+    assert!(matches!(err, CompileError::Unexpected { .. }));
+}
+
+#[test]
+fn test_break_outside_loop_in_block() {
+    let err = compile_err(r"{ break; }");
+    assert!(matches!(err, CompileError::Unexpected { .. }));
+}

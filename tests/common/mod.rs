@@ -82,6 +82,17 @@ pub fn math_registry() -> FunctionRegistry {
         };
         Value::Bool(a >= b)
     }
+    fn eq(args: &[Value]) -> Value {
+        let a = match &args[0] {
+            Value::Number(n) => *n,
+            _ => 0.0,
+        };
+        let b = match &args[1] {
+            Value::Number(n) => *n,
+            _ => 0.0,
+        };
+        Value::Bool((a - b).abs() < f64::EPSILON)
+    }
 
     reg.register("add", add);
     reg.register("sub", sub);
@@ -90,6 +101,7 @@ pub fn math_registry() -> FunctionRegistry {
     reg.register("neg", neg);
     reg.register("lt", lt);
     reg.register("ge", ge);
+    reg.register("eq", eq);
     reg
 }
 

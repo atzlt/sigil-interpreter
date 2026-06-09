@@ -38,6 +38,8 @@ pub enum Token {
     Else,
     #[token("while")]
     While,
+    #[token("break")]
+    Break,
     #[token("for")]
     For,
     #[token("in")]
@@ -140,6 +142,7 @@ impl fmt::Display for Token {
             Token::If => write!(f, "if"),
             Token::Else => write!(f, "else"),
             Token::While => write!(f, "while"),
+            Token::Break => write!(f, "break"),
             Token::For => write!(f, "for"),
             Token::In => write!(f, "in"),
             Token::Return => write!(f, "return"),

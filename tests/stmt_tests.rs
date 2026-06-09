@@ -431,3 +431,60 @@ fn test_and_or_chain_with_assignment() {
         Value::Number(2.0)
     );
 }
+
+// ── break ──
+
+#[test]
+fn test_break_immediate() {
+    assert_eq!(
+        run_program(r"while 1 { break; }"),
+        Value::Nil
+    );
+}
+
+#[test]
+fn test_break_before_return() {
+    assert_eq!(
+        run_program(r"while 1 { break; return 42; }"),
+        Value::Nil
+    );
+}
+
+#[test]
+fn test_break_after_statement() {
+    assert_eq!(
+        run_program(r"let x = 1; while 1 { x = 2; break; } return x;"),
+        Value::Number(2.0)
+    );
+}
+
+#[test]
+fn test_break_conditional() {
+    assert_eq!(
+        run_program(r"let i = 0; while i < 10 { i = i + 1; if i == 3 { break; } } return i;"),
+        Value::Number(3.0)
+    );
+}
+
+#[test]
+fn test_break_nested_inner() {
+    assert_eq!(
+        run_program(r"while 1 { while 1 { break; } return 1; } return 2;"),
+        Value::Number(1.0)
+    );
+}
+
+#[test]
+fn test_break_nested_outer_via_flag() {
+    assert_eq!(
+        run_program(
+            r"let flag = 0;
+              while 1 {
+                while 1 { flag = 1; break; }
+                if flag { break; }
+              }
+              return flag;"
+        ),
+        Value::Number(1.0)
+    );
+}

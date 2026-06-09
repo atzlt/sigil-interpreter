@@ -69,6 +69,7 @@ pub struct Compiler<'a> {
     pub(super) current: (Token, Span),
     pub(super) regs: RegisterTracker,
     pub(super) locals: LocalsTracker,
+    pub(super) loop_exits: Vec<Vec<usize>>,
 }
 
 fn new_compiler(source: &str) -> Compiler<'_> {
@@ -78,6 +79,7 @@ fn new_compiler(source: &str) -> Compiler<'_> {
         current: (Token::default(), Span::default()),
         regs: RegisterTracker::new(256),
         locals: LocalsTracker::new(),
+        loop_exits: Vec::new(),
     }
 }
 
