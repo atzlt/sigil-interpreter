@@ -1,4 +1,5 @@
 pub mod compile;
+mod expr;
 mod lexer;
-mod register;
 mod locals;
+mod register;
