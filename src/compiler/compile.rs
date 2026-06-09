@@ -121,15 +121,6 @@ impl Compiler<'_> {
         std::mem::discriminant(&self.current.0) == std::mem::discriminant(tok)
     }
 
-    pub(super) fn matches(&mut self, tok: &Token) -> Result<bool> {
-        if self.check(tok) {
-            self.advance()?;
-            Ok(true)
-        } else {
-            Ok(false)
-        }
-    }
-
     pub(super) fn consume(&mut self, expected: &Token) -> Result<()> {
         if self.check(expected) {
             self.advance()?;

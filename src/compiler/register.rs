@@ -101,10 +101,10 @@ impl RegisterTracker {
         self.temp_first_run = true;
     }
 
-    fn clear_all(&mut self) {
-        self.held_pt = 0;
-        self.clear_temp();
-    }
+    // fn clear_all(&mut self) {
+    //     self.held_pt = 0;
+    //     self.clear_temp();
+    // }
 }
 
 impl<'a> Compiler<'a> {
@@ -130,9 +130,9 @@ impl<'a> Compiler<'a> {
         self.regs.clear_temp();
     }
 
-    fn clear_all(&mut self) {
-        self.regs.clear_all();
-    }
+    // fn clear_all(&mut self) {
+    //     self.regs.clear_all();
+    // }
 
     pub(super) fn reuse_or_alloc(&mut self, ops: &[u8]) -> Result<u8> {
         for &op in ops {

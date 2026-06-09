@@ -12,8 +12,21 @@ impl<'a> Compiler<'a> {
         match self.current.0 {
             Token::Let => self.parse_let_decl(),
             Token::Return => self.parse_return_stmt(),
+            Token::LBrace => self.parse_block(),
             _ => self.parse_expr_stmt(),
         }
+    }
+
+    fn parse_block(&mut self) -> Result<()> {
+        let open_span = self.current.1.clone();
+        self.consume(&Token::LBrace)?;
+        self.enter_scope();
+        while !self.check(&Token::RBrace) && !self.check(&Token::Eof) {
+            self.statement()?;
+        }
+        self.exit_scope();
+        self.consume_close(&Token::RBrace, open_span)?;
+        Ok(())
     }
 
     fn parse_let_decl(&mut self) -> Result<()> {
