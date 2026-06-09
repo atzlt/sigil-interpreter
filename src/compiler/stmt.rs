@@ -13,6 +13,8 @@ impl<'a> Compiler<'a> {
             Token::Let => self.parse_let_decl(),
             Token::Return => self.parse_return_stmt(),
             Token::LBrace => self.parse_block(),
+            Token::If => self.parse_if(),
+            Token::While => self.parse_while(),
             _ => self.parse_expr_stmt(),
         }
     }
@@ -51,7 +53,7 @@ impl<'a> Compiler<'a> {
         let held = self.alloc_held()?;
         let rhs = self.expression()?;
         emit!(self.chunk, MOVE, held, rhs);
-        self.free_others(held, &[rhs]);
+        self.free_other_temps(held, &[rhs]);
         self.add_local(name, held);
         self.consume(&Token::Semicolon)?;
 
@@ -75,8 +77,49 @@ impl<'a> Compiler<'a> {
 
     fn parse_expr_stmt(&mut self) -> Result<()> {
         let reg = self.expression()?;
-        self.regs.free_reg(reg);
+        self.regs.free_temp(reg);
         self.consume(&Token::Semicolon)?;
+        Ok(())
+    }
+
+    fn parse_if(&mut self) -> Result<()> {
+        self.consume(&Token::If)?;
+        let test = self.expression()?;
+        let test_ip = self.chunk.end();
+        self.emit_test(test);
+        self.regs.free_temp(test);
+        self.parse_block()?;
+        let if_end = self.chunk.end();
+
+        if self.matches(&Token::Else)? {
+            let if_end = self.emit_jmp();
+            let else_start = self.chunk.end();
+            if self.check(&Token::If) {
+                self.parse_if()?;
+            } else {
+                self.parse_block()?;
+            }
+            let else_end = self.chunk.end();
+            self.patch_if_else(test_ip, if_end, else_start, else_end);
+        } else {
+            self.patch_if(test_ip, if_end);
+        }
+
+        Ok(())
+    }
+
+    fn parse_while(&mut self) -> Result<()> {
+        self.consume(&Token::While)?;
+        let test_start = self.chunk.end();
+        let test = self.expression()?;
+        let test_ip = self.emit_test(test);
+        self.regs.free_temp(test);
+        self.parse_block()?;
+        let body_end = self.chunk.end();
+        let offset = test_start as isize - body_end as isize;
+        self.emit_jump_offset(offset);
+        let while_end = self.chunk.end();
+        self.patch_if(test_ip, while_end);
         Ok(())
     }
 }

@@ -11,6 +11,7 @@ use crate::{
 
 // ── Precedence levels (low → high) ──
 
+const PREC_ASSIGN: u8 = 0;
 const PREC_TERNARY: u8 = 10;
 const PREC_OR: u8 = 20;
 const PREC_AND: u8 = 30;
@@ -44,15 +45,24 @@ impl<'a> Compiler<'a> {
             let op = self.current.0;
             self.advance()?;
 
-            if op == Token::Quest {
-                lhs = self.emit_ternary(lhs)?;
-            } else {
-                let next_bp = match assoc {
-                    Assoc::Left => bp + 1,
-                    Assoc::Right => bp,
-                };
-                let rhs = self.parse_precedence(next_bp)?;
-                lhs = self.emit_binary(&op, lhs, rhs)?;
+            match op {
+                Token::Quest => {
+                    lhs = self.emit_ternary(lhs)?;
+                }
+                Token::And => {
+                    lhs = self.emit_short_circuit_and(lhs)?;
+                }
+                Token::Or => {
+                    lhs = self.emit_short_circuit_or(lhs)?;
+                }
+                _ => {
+                    let next_bp = match assoc {
+                        Assoc::Left => bp + 1,
+                        Assoc::Right => bp,
+                    };
+                    let rhs = self.parse_precedence(next_bp)?;
+                    lhs = self.emit_binary(&op, lhs, rhs)?;
+                }
             }
         }
 
@@ -71,13 +81,10 @@ impl<'a> Compiler<'a> {
                 self.advance()?;
                 self.emit_string(spur)
             }
-            Token::True => {
+            Token::BooleanLit(b) => {
+                let b = *b;
                 self.advance()?;
-                self.emit_bool(true)
-            }
-            Token::False => {
-                self.advance()?;
-                self.emit_bool(false)
+                self.emit_bool(b)
             }
             Token::Nil => {
                 self.advance()?;
@@ -149,33 +156,41 @@ impl<'a> Compiler<'a> {
     }
 
     fn emit_binary(&mut self, op: &Token, lhs: u8, rhs: u8) -> Result<u8> {
-        let method = binary_op_method(op);
-        let name_idx = self.chunk.add_constant(Value::String(method.into()));
-        let reg = self.reuse_or_alloc(&[lhs, rhs])?;
-        emit!(self.chunk, CALL, reg, wide name_idx, 2_u8, lhs, rhs);
-        self.free_others(reg, &[lhs, rhs]);
-        Ok(reg)
+        match *op {
+            Token::Equals => {
+                emit!(self.chunk, MOVE, lhs, rhs);
+                self.regs.free_temp(lhs);
+                self.regs.free_temp(rhs);
+                Ok(lhs)
+            }
+            _ => {
+                let method = binary_op_method(op);
+                let name_idx = self.chunk.add_constant(Value::String(method.into()));
+                let reg = self.reuse_or_alloc(&[lhs, rhs])?;
+                emit!(self.chunk, CALL, reg, wide name_idx, 2_u8, lhs, rhs);
+                self.free_other_temps(reg, &[lhs, rhs]);
+                Ok(reg)
+            }
+        }
     }
 
     fn emit_unary(&mut self, method: &str, operand: u8) -> Result<u8> {
         let name_idx = self.chunk.add_constant(Value::String(method.into()));
         let reg = self.reuse_or_alloc(&[operand])?;
         emit!(self.chunk, CALL, reg, wide name_idx, 1_u8, operand);
-        self.free_others(reg, &[operand]);
+        self.free_other_temps(reg, &[operand]);
         Ok(reg)
     }
 
     fn emit_ternary(&mut self, test: u8) -> Result<u8> {
-        let test_ip = self.chunk.end();
-        self.emit_test(test);
+        let test_ip = self.emit_test(test);
         let reg = self.reuse_or_alloc(&[test])?;
-        self.free_others(reg, &[test]);
+        self.free_other_temps(reg, &[test]);
 
         let mhs = self.parse_precedence(0)?;
         emit!(self.chunk, MOVE, reg, mhs);
-        let if_end = self.chunk.end();
-        emit!(self.chunk, JMP, wide 0);
-        self.free_others(reg, &[mhs]);
+        let if_end = self.emit_jmp();
+        self.free_other_temps(reg, &[mhs]);
 
         self.consume(&Token::Colon)?;
 
@@ -183,9 +198,49 @@ impl<'a> Compiler<'a> {
         let rhs = self.parse_precedence(PREC_TERNARY)?;
         emit!(self.chunk, MOVE, reg, rhs);
         let else_end = self.chunk.end();
-        self.free_others(reg, &[rhs]);
+        self.free_other_temps(reg, &[rhs]);
 
-        self.patch_conditional(test_ip, if_end, else_start, else_end);
+        self.patch_if_else(test_ip, if_end, else_start, else_end);
+        Ok(reg)
+    }
+
+    fn emit_short_circuit_or(&mut self, lhs: u8) -> Result<u8> {
+        let test_ip = self.emit_test(lhs);
+        let reg = self.reuse_or_alloc(&[lhs])?;
+        self.free_other_temps(reg, &[lhs]);
+
+        if reg != lhs {
+            emit!(self.chunk, MOVE, reg, lhs);
+        }
+        let if_end = self.emit_jmp();
+
+        let else_start = self.chunk.end();
+        let rhs = self.parse_precedence(PREC_OR + 1)?;
+        emit!(self.chunk, MOVE, reg, rhs);
+        let else_end = self.chunk.end();
+        self.free_other_temps(reg, &[rhs]);
+
+        self.patch_if_else(test_ip, if_end, else_start, else_end);
+        Ok(reg)
+    }
+
+    fn emit_short_circuit_and(&mut self, lhs: u8) -> Result<u8> {
+        let test_ip = self.emit_test(lhs);
+        let reg = self.reuse_or_alloc(&[lhs])?;
+        self.free_other_temps(reg, &[lhs]);
+
+        let rhs = self.parse_precedence(PREC_AND + 1)?;
+        emit!(self.chunk, MOVE, reg, rhs);
+        let if_end = self.emit_jmp();
+
+        let else_start = self.chunk.end();
+        if reg != lhs {
+            emit!(self.chunk, MOVE, reg, lhs);
+        }
+        let else_end = self.chunk.end();
+        self.free_other_temps(reg, &[rhs]);
+
+        self.patch_if_else(test_ip, if_end, else_start, else_end);
         Ok(reg)
     }
 }
@@ -205,8 +260,6 @@ fn binary_op_method(op: &Token) -> &'static str {
         Token::Le => "le",
         Token::Gt => "gt",
         Token::Ge => "ge",
-        Token::And => "and",
-        Token::Or => "or",
         // TODO: add more operators as language design settles
         _ => unreachable!("binary_op_method called on non-binary token"),
     }
@@ -216,6 +269,7 @@ fn binary_op_method(op: &Token) -> &'static str {
 
 fn infix_bp_assoc(tok: &Token) -> Option<(u8, Assoc)> {
     match tok {
+        Token::Equals => Some((PREC_ASSIGN, Assoc::Right)),
         Token::Quest => Some((PREC_TERNARY, Assoc::Right)),
         Token::Or => Some((PREC_OR, Assoc::Left)),
         Token::And => Some((PREC_AND, Assoc::Left)),

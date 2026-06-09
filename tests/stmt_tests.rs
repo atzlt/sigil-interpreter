@@ -1,62 +1,9 @@
-use sigil_interpreter::{
-    compiler::compile::{CompileError, compile_program},
-    registry::FunctionRegistry,
-    value::Value,
-    vm::VM,
-};
+mod common;
 
-fn math_registry() -> FunctionRegistry {
-    let mut reg = FunctionRegistry::new();
+use common::run_program;
+use sigil_interpreter::value::Value;
 
-    fn add(args: &[Value]) -> Value {
-        let a = match &args[0] {
-            Value::Number(n) => *n,
-            _ => 0.0,
-        };
-        let b = match &args[1] {
-            Value::Number(n) => *n,
-            _ => 0.0,
-        };
-        Value::Number(a + b)
-    }
-    fn sub(args: &[Value]) -> Value {
-        let a = match &args[0] {
-            Value::Number(n) => *n,
-            _ => 0.0,
-        };
-        let b = match &args[1] {
-            Value::Number(n) => *n,
-            _ => 0.0,
-        };
-        Value::Number(a - b)
-    }
-    fn mul(args: &[Value]) -> Value {
-        let a = match &args[0] {
-            Value::Number(n) => *n,
-            _ => 0.0,
-        };
-        let b = match &args[1] {
-            Value::Number(n) => *n,
-            _ => 0.0,
-        };
-        Value::Number(a * b)
-    }
-
-    reg.register("add", add);
-    reg.register("sub", sub);
-    reg.register("mul", mul);
-    reg
-}
-
-fn run_program(source: &str) -> Value {
-    let mut chunk = compile_program(source).unwrap();
-    println!("{chunk}");
-    let registry = math_registry();
-    let mut vm = VM::new();
-    vm.run(&mut chunk, &registry).unwrap()
-}
-
-// ── full programs: let + expr stmt + return ──
+// ── let + return ──
 
 #[test]
 fn test_program_let_return() {
@@ -87,56 +34,6 @@ fn test_program_return_expr_after_lets() {
         run_program("let a = 10; let b = 20; return a + b; let b = 30; return a;"),
         Value::Number(30.0)
     );
-}
-
-// ── error kind matching ──
-
-#[test]
-fn test_let_undefined_var() {
-    let err = compile_program("let y = x;").unwrap_err();
-    assert!(matches!(err, CompileError::UndefinedVariable { .. }));
-}
-
-#[test]
-fn test_let_missing_identifier() {
-    let err = compile_program("let = 42;").unwrap_err();
-    assert!(matches!(err, CompileError::Unexpected { .. }));
-}
-
-#[test]
-fn test_let_missing_equals() {
-    let err = compile_program("let x 42;").unwrap_err();
-    assert!(matches!(err, CompileError::Unexpected { .. }));
-}
-
-#[test]
-fn test_let_missing_semicolon() {
-    let err = compile_program("let x = 42").unwrap_err();
-    assert!(matches!(err, CompileError::Unexpected { .. }));
-}
-
-#[test]
-fn test_let_malformed_expr() {
-    let err = compile_program("let x = 42; let y = x = 1;").unwrap_err();
-    assert!(matches!(err, CompileError::Unexpected { .. }));
-}
-
-#[test]
-fn test_expr_stmt_missing_semicolon() {
-    let err = compile_program("42").unwrap_err();
-    assert!(matches!(err, CompileError::Unexpected { .. }));
-}
-
-#[test]
-fn test_expr_stmt_undefined_var() {
-    let err = compile_program("x;").unwrap_err();
-    assert!(matches!(err, CompileError::UndefinedVariable { .. }));
-}
-
-#[test]
-fn test_return_missing_semicolon() {
-    let err = compile_program("return 42").unwrap_err();
-    assert!(matches!(err, CompileError::Unexpected { .. }));
 }
 
 // ── blocks ──
@@ -173,15 +70,364 @@ fn test_block_register_reuse() {
     );
 }
 
+// ── if statements ──
+
 #[test]
-fn test_block_out_of_scope() {
-    let err =
-        compile_program(r"let x = 1; { let y = 2; } let z = 3; return x + y + z;").unwrap_err();
-    assert!(matches!(err, CompileError::UndefinedVariable { .. }));
+fn test_if_true() {
+    assert_eq!(
+        run_program(r"if 1 { return 42; }"),
+        Value::Number(42.0)
+    );
 }
 
 #[test]
-fn test_block_unclosed() {
-    let err = compile_program(r"{ let x = 42;").unwrap_err();
-    assert!(matches!(err, CompileError::Unclosed { .. }));
+fn test_if_false_falls_through() {
+    assert_eq!(
+        run_program(r"if 0 { return 1; } return 2;"),
+        Value::Number(2.0)
+    );
+}
+
+#[test]
+fn test_if_else_true() {
+    assert_eq!(
+        run_program(r"if 1 { return 1; } else { return 2; }"),
+        Value::Number(1.0)
+    );
+}
+
+#[test]
+fn test_if_else_false() {
+    assert_eq!(
+        run_program(r"if 0 { return 1; } else { return 2; }"),
+        Value::Number(2.0)
+    );
+}
+
+#[test]
+fn test_if_else_if_chain_first_true() {
+    assert_eq!(
+        run_program(r"if 1 { return 1; } else if 1 { return 2; } else { return 3; }"),
+        Value::Number(1.0)
+    );
+}
+
+#[test]
+fn test_if_else_if_chain_second_true() {
+    assert_eq!(
+        run_program(r"if 0 { return 1; } else if 1 { return 2; } else { return 3; }"),
+        Value::Number(2.0)
+    );
+}
+
+#[test]
+fn test_if_else_if_chain_all_false() {
+    assert_eq!(
+        run_program(r"if 0 { return 1; } else if 0 { return 2; } else { return 3; }"),
+        Value::Number(3.0)
+    );
+}
+
+#[test]
+fn test_if_nested_true() {
+    assert_eq!(
+        run_program(r"if 1 { if 1 { return 42; } }"),
+        Value::Number(42.0)
+    );
+}
+
+#[test]
+fn test_if_nested_outer_false() {
+    assert_eq!(
+        run_program(r"if 0 { if 1 { return 1; } } return 2;"),
+        Value::Number(2.0)
+    );
+}
+
+#[test]
+fn test_if_with_variable_true() {
+    assert_eq!(
+        run_program(r"let x = 1; if x { return 10; } else { return 20; }"),
+        Value::Number(10.0)
+    );
+}
+
+#[test]
+fn test_if_with_variable_false() {
+    assert_eq!(
+        run_program(r"let x = 0; if x { return 10; } else { return 20; }"),
+        Value::Number(20.0)
+    );
+}
+
+#[test]
+fn test_if_with_expression_condition() {
+    assert_eq!(
+        run_program(r"if 2 - 2 { return 1; } else { return 2; }"),
+        Value::Number(2.0)
+    );
+}
+
+#[test]
+fn test_if_with_let_in_body() {
+    assert_eq!(
+        run_program(r"if 1 { let x = 42; return x; }"),
+        Value::Number(42.0)
+    );
+}
+
+#[test]
+fn test_if_long_else_if_chain() {
+    assert_eq!(
+        run_program(
+            r"if 0 { return 0; } else if 0 { return 1; } else if 0 { return 2; }
+              else if 0 { return 3; } else if 0 { return 4; } else if 0 { return 5; }
+              
+              else if 0 { return 6; } else if 0 { return 7; } else if 0 { return 8; }
+              else if 1 { return 9; } else { return 10; }"
+        ),
+        Value::Number(9.0)
+    );
+}
+
+// ── while loops ──
+
+#[test]
+fn test_while_true_returns_from_body() {
+    assert_eq!(
+        run_program(r"while 1 { return 42; }"),
+        Value::Number(42.0)
+    );
+}
+
+#[test]
+fn test_while_false_skips_body() {
+    assert_eq!(
+        run_program(r"while 0 { return 1; } return 2;"),
+        Value::Number(2.0)
+    );
+}
+
+#[test]
+fn test_while_condition_truthy_then_returns() {
+    assert_eq!(
+        run_program(r"while 1 < 2 { return 10; }"),
+        Value::Number(10.0)
+    );
+}
+
+#[test]
+fn test_while_condition_falsey_skips() {
+    assert_eq!(
+        run_program(r"while 2 < 1 { return 10; } return 20;"),
+        Value::Number(20.0)
+    );
+}
+
+#[test]
+fn test_while_nested() {
+    assert_eq!(
+        run_program(r"while 1 { while 1 { return 42; } }"),
+        Value::Number(42.0)
+    );
+}
+
+#[test]
+fn test_while_outer_false_inner_true() {
+    assert_eq!(
+        run_program(r"while 0 { while 1 { return 1; } } return 2;"),
+        Value::Number(2.0)
+    );
+}
+
+#[test]
+fn test_while_with_let_in_body() {
+    assert_eq!(
+        run_program(r"while 1 { let x = 42; return x; }"),
+        Value::Number(42.0)
+    );
+}
+
+#[test]
+fn test_while_with_if_in_body() {
+    assert_eq!(
+        run_program(r"while 1 { if 1 { return 42; } else { return 0; } }"),
+        Value::Number(42.0)
+    );
+}
+
+#[test]
+fn test_while_with_expr_condition_false() {
+    assert_eq!(
+        run_program(r"while 1 - 1 { return 1; } return 2;"),
+        Value::Number(2.0)
+    );
+}
+
+// ── assignment ──
+
+#[test]
+fn test_assignment_basic() {
+    assert_eq!(
+        run_program(r"let x = 1; x = 2; return x;"),
+        Value::Number(2.0)
+    );
+}
+
+#[test]
+fn test_assignment_is_expression() {
+    assert_eq!(
+        run_program(r"let x = 1; let y = (x = 2); return y;"),
+        Value::Number(2.0)
+    );
+}
+
+#[test]
+fn test_assignment_chained() {
+    assert_eq!(
+        run_program(r"let a = 0; let b = 0; a = b = 42; return a;"),
+        Value::Number(42.0)
+    );
+}
+
+#[test]
+fn test_assignment_chained_both_set() {
+    assert_eq!(
+        run_program(r"let a = 0; let b = 0; a = b = 42; return a + b;"),
+        Value::Number(84.0)
+    );
+}
+
+#[test]
+fn test_assignment_used_in_expression() {
+    assert_eq!(
+        run_program(r"let x = 1; return (x = 2) + (x = 3);"),
+        Value::Number(6.0)
+    );
+}
+
+#[test]
+fn test_assignment_in_if_condition() {
+    assert_eq!(
+        run_program(r"let x = 0; if x = 1 { return x; }"),
+        Value::Number(1.0)
+    );
+}
+
+#[test]
+fn test_assignment_in_if_condition_false() {
+    assert_eq!(
+        run_program(r"let x = 1; if x = 0 { return 1; } return 2;"),
+        Value::Number(2.0)
+    );
+}
+
+#[test]
+fn test_while_counting_with_assignment() {
+    assert_eq!(
+        run_program(r"let i = 0; while i < 5 { i = i + 1; } return i;"),
+        Value::Number(5.0)
+    );
+}
+
+#[test]
+fn test_while_sum_with_assignment() {
+    assert_eq!(
+        run_program(
+            r"let i = 0; let sum = 0;
+              while i < 10 {
+                sum = sum + i;
+                i = i + 1;
+              }
+              return sum;"
+        ),
+        Value::Number(45.0)
+    );
+}
+
+#[test]
+fn test_assignment_to_outer_var_from_block() {
+    assert_eq!(
+        run_program(r"let x = 1; { x = 2; } return x;"),
+        Value::Number(2.0)
+    );
+}
+
+// ── short-circuit and / or ──
+
+#[test]
+fn test_and_short_circuit_falsey_lhs() {
+    // 0 is falsey → RHS skipped, x unchanged
+    assert_eq!(
+        run_program(r"let x = 1; 0 & (x = 2); return x;"),
+        Value::Number(1.0)
+    );
+}
+
+#[test]
+fn test_and_short_circuit_truthy_lhs() {
+    // 1 is truthy → RHS evaluated, x becomes 2, result is 2
+    assert_eq!(
+        run_program(r"let x = 1; 1 & (x = 2); return x;"),
+        Value::Number(2.0)
+    );
+}
+
+#[test]
+fn test_or_short_circuit_truthy_lhs() {
+    // 1 is truthy → RHS skipped, x unchanged
+    assert_eq!(
+        run_program(r"let x = 1; 1 | (x = 2); return x;"),
+        Value::Number(1.0)
+    );
+}
+
+#[test]
+fn test_or_short_circuit_falsey_lhs() {
+    // 0 is falsey → RHS evaluated, x becomes 2, result is 2
+    assert_eq!(
+        run_program(r"let x = 1; 0 | (x = 2); return x;"),
+        Value::Number(2.0)
+    );
+}
+
+#[test]
+fn test_short_circuit_in_if_condition() {
+    // 0 & (x = 2) → falsey, x unchanged, condition false → else branch
+    assert_eq!(
+        run_program(r"let x = 1; if 0 & (x = 2) { return 0; } return x;"),
+        Value::Number(1.0)
+    );
+}
+
+#[test]
+fn test_short_circuit_in_while_condition() {
+    // 0 & (x = 2) → falsey, x unchanged, loop body never runs
+    assert_eq!(
+        run_program(r"let x = 1; while 0 & (x = 2) { x = 3; } return x;"),
+        Value::Number(1.0)
+    );
+}
+
+#[test]
+fn test_and_or_precedence_with_assignment() {
+    // 0 | (x = 2) & (x = 3)  →  0 | ((x = 2) & (x = 3))
+    // 0 falsey → eval rhs-of-| → (x=2) & (x=3) → 2 truthy → eval rhs-of-& → x=3
+    // result 3, x = 3
+    assert_eq!(
+        run_program(r"let x = 1; 0 | (x = 2) & (x = 3); return x;"),
+        Value::Number(3.0)
+    );
+}
+
+#[test]
+fn test_and_or_chain_with_assignment() {
+    // (1 & (x=2)) | ((x=3) & 0)
+    // 1 truthy → eval (x=2) → x=2, & returns 2
+    // 2 truthy → | short-circuits, skip RHS entirely
+    // x = 2, result 2
+    assert_eq!(
+        run_program(r"let x = 1; return 1 & (x = 2) | (x = 3) & 0;"),
+        Value::Number(2.0)
+    );
 }

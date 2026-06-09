@@ -81,7 +81,7 @@ impl RegisterTracker {
     }
 
     /// This is a no-op on Held registers.
-    pub(super) fn free_reg(&mut self, reg: u8) {
+    pub(super) fn free_temp(&mut self, reg: u8) {
         if (reg as usize) < self.state.len() && self.state[reg as usize] == RegState::Temp {
             self.state[reg as usize] = RegState::Free;
         }
@@ -143,10 +143,10 @@ impl<'a> Compiler<'a> {
         self.alloc_temp()
     }
 
-    pub(super) fn free_others(&mut self, dst: u8, ops: &[u8]) {
+    pub(super) fn free_other_temps(&mut self, dst: u8, ops: &[u8]) {
         for &op in ops {
             if dst != op {
-                self.regs.free_reg(op);
+                self.regs.free_temp(op);
             }
         }
     }

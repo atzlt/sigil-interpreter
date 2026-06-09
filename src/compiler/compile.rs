@@ -121,6 +121,15 @@ impl Compiler<'_> {
         std::mem::discriminant(&self.current.0) == std::mem::discriminant(tok)
     }
 
+    pub(super) fn matches(&mut self, tok: &Token) -> Result<bool> {
+        if self.check(tok) {
+            self.advance()?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
     pub(super) fn consume(&mut self, expected: &Token) -> Result<()> {
         if self.check(expected) {
             self.advance()?;
@@ -158,11 +167,32 @@ impl Compiler<'_> {
     // Helper functions
 
     pub(super) fn emit_test(&mut self, lhs: u8) -> usize {
+        let ip = self.chunk.end();
         emit!(self.chunk, TEST, lhs, wide 0);
-        self.chunk.last_wide()
+        return ip;
     }
 
-    pub(super) fn patch_conditional(
+    pub(super) fn emit_jmp(&mut self) -> usize {
+        let ip = self.chunk.end();
+        emit!(self.chunk, JMP, wide 0);
+        return ip;
+    }
+
+    pub(super) fn emit_jump_offset(&mut self, offset: isize) {
+        let offset = (offset as i16).to_le_bytes();
+        emit!(self.chunk, JMP, offset[0], offset[1]);
+    }
+
+    pub(super) fn patch_if(
+        &mut self,
+        test_ip: usize,
+        if_end: usize,
+    ) {
+        self.chunk
+            .patch_wide(test_ip + 2, (if_end - test_ip) as u16);
+    }
+
+    pub(super) fn patch_if_else(
         &mut self,
         test_ip: usize,
         if_end: usize,

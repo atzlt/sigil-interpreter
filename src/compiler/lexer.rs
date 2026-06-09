@@ -44,10 +44,8 @@ pub enum Token {
     In,
     #[token("return")]
     Return,
-    #[token("true")]
-    True,
-    #[token("false")]
-    False,
+    #[regex("true|false", |lex| lex.slice() == "true")]
+    BooleanLit(bool),
     #[token("nil")]
     Nil,
     #[token("&")]
@@ -145,8 +143,7 @@ impl fmt::Display for Token {
             Token::For => write!(f, "for"),
             Token::In => write!(f, "in"),
             Token::Return => write!(f, "return"),
-            Token::True => write!(f, "true"),
-            Token::False => write!(f, "false"),
+            Token::BooleanLit(_) => write!(f, "BOOLEAN"),
             Token::Nil => write!(f, "nil"),
             Token::And => write!(f, "and"),
             Token::Or => write!(f, "or"),
