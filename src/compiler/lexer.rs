@@ -1,3 +1,5 @@
+use std::fmt;
+
 use lasso::{Rodeo, Spur};
 use logos::Logos;
 
@@ -124,6 +126,61 @@ pub enum Token {
     Semicolon,
 
     // ── Special ────
-    #[default]
     Eof,
+    #[default]
+    Other,
+}
+
+impl fmt::Display for Token {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            // Keywords
+            Token::Let => write!(f, "let"),
+            Token::Fn => write!(f, "fn"),
+            Token::If => write!(f, "if"),
+            Token::Else => write!(f, "else"),
+            Token::While => write!(f, "while"),
+            Token::For => write!(f, "for"),
+            Token::In => write!(f, "in"),
+            Token::Return => write!(f, "return"),
+            Token::True => write!(f, "true"),
+            Token::False => write!(f, "false"),
+            Token::Nil => write!(f, "nil"),
+            Token::And => write!(f, "and"),
+            Token::Or => write!(f, "or"),
+            // Literals
+            Token::Number(_) => write!(f, "NUMBER"),
+            Token::String(_) => write!(f, "STRING"),
+            Token::Identifier(_) => write!(f, "IDENT"),
+            // Operators
+            Token::Plus => write!(f, "+"),
+            Token::Minus => write!(f, "-"),
+            Token::Star => write!(f, "*"),
+            Token::Slash => write!(f, "/"),
+            Token::Percent => write!(f, "%"),
+            Token::Equals => write!(f, "="),
+            Token::EqEq => write!(f, "=="),
+            Token::Neq => write!(f, "!="),
+            Token::Lt => write!(f, "<"),
+            Token::Le => write!(f, "<="),
+            Token::Gt => write!(f, ">"),
+            Token::Ge => write!(f, ">="),
+            Token::Bang => write!(f, "!"),
+            Token::Dot => write!(f, "."),
+            Token::Comma => write!(f, ","),
+            Token::Colon => write!(f, ":"),
+            Token::Arrow => write!(f, "->"),
+            // Delimiters
+            Token::LParen => write!(f, "("),
+            Token::RParen => write!(f, ")"),
+            Token::LBrace => write!(f, "{{"),
+            Token::RBrace => write!(f, "}}"),
+            Token::LBracket => write!(f, "["),
+            Token::RBracket => write!(f, "]"),
+            Token::Semicolon => write!(f, ";"),
+            // Special
+            Token::Eof => write!(f, "EOF"),
+            Token::Other => write!(f, "OTHER"),
+        }
+    }
 }
