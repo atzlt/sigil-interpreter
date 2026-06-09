@@ -69,6 +69,7 @@ pub struct Compiler<'a> {
     lexer: logos::SpannedIter<'a, Token>,
     pub(super) chunk: Chunk,
     pub(super) current: (Token, Span),
+    pub(super) prev_span: Span,
     pub(super) regs: RegisterTracker,
     pub(super) locals: LocalsTracker,
     pub(super) loops: LoopTracker,
@@ -79,6 +80,7 @@ fn new_compiler(source: &str) -> Compiler<'_> {
         lexer: Token::lexer(source).spanned(),
         chunk: Chunk::new(),
         current: (Token::default(), Span::default()),
+        prev_span: Span::default(),
         regs: RegisterTracker::new(256),
         locals: LocalsTracker::new(),
         loops: LoopTracker::new(),
@@ -109,6 +111,7 @@ impl Compiler<'_> {
     // ── Token handling ──
 
     pub(super) fn advance(&mut self) -> Result<()> {
+        self.prev_span = self.current.1.clone();
         let spanned = self
             .lexer
             .next()
@@ -169,6 +172,10 @@ impl Compiler<'_> {
     }
 
     // Helper functions
+
+    pub(super) fn record_locus(&mut self) {
+        self.chunk.record_locus(self.current.1.clone());
+    }
 
     pub(super) fn emit_test(&mut self, lhs: u8) -> usize {
         let ip = self.chunk.end();

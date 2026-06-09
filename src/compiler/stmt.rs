@@ -14,6 +14,7 @@ enum JumpKind {
 impl<'a> Compiler<'a> {
     pub(super) fn statement(&mut self) -> Result<()> {
         self.clear_temp();
+        self.record_locus();
         match self.current.0 {
             Token::Let => self.parse_let_decl(),
             Token::Return => self.parse_return_stmt(),
@@ -124,7 +125,7 @@ impl<'a> Compiler<'a> {
         if !self.loops.in_loop() {
             return Err(CompileError::Unexpected {
                 token,
-                diag: (self.current.1.clone(), format!("{token} outside loop")),
+                diag: (self.prev_span.clone(), format!("{token} outside loop")),
             });
         }
         let jmp_ip = self.emit_jmp();

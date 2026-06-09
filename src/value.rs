@@ -45,6 +45,13 @@ impl Value {
             Value::String(s) => !s.is_empty(),
         }
     }
+
+    pub fn as_num(&self) -> f64 {
+        match self {
+            Value::Number(n) => *n,
+            _ => 0.0,
+        }
+    }
 }
 
 impl fmt::Display for Value {

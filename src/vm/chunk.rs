@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, ops::Range};
 
 use crate::{constant::ConstantPool, value::Value, vm::OpCode};
 
@@ -7,6 +7,7 @@ pub struct Chunk {
     pub code: Vec<u8>,
     pub constants: ConstantPool,
     pub ip: usize,
+    pub locus: Vec<(usize, Range<usize>)>,
 }
 
 impl Chunk {
@@ -15,6 +16,7 @@ impl Chunk {
             code: Vec::new(),
             constants: ConstantPool::new(),
             ip: 0,
+            locus: Vec::new(),
         }
     }
 
@@ -72,6 +74,15 @@ impl Chunk {
 
     pub fn end(&self) -> usize {
         self.code.len()
+    }
+
+    pub fn record_locus(&mut self, span: Range<usize>) {
+        self.locus.push((self.code.len(), span));
+    }
+
+    pub fn locus_at(&self, ip: usize) -> Option<&Range<usize>> {
+        let idx = self.locus.partition_point(|(pos, _)| *pos <= ip);
+        idx.checked_sub(1).map(|i| &self.locus[i].1)
     }
 }
 

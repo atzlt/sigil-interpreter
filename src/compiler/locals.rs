@@ -82,7 +82,7 @@ impl<'a> Compiler<'a> {
             .resolve_local(id)
             .map_err(|_| CompileError::UndefinedVariable {
                 name: self.intern_resolve(&id).to_string(),
-                diag: (self.current.1.clone(), "undefined variable".to_string()),
+                diag: (self.prev_span.clone(), "undefined variable".to_string()),
             })
     }
 

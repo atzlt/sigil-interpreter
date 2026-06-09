@@ -29,6 +29,7 @@ enum Assoc {
 
 impl<'a> Compiler<'a> {
     pub(super) fn expression(&mut self) -> Result<u8> {
+        self.record_locus();
         self.parse_precedence(0)
     }
 

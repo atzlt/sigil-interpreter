@@ -88,7 +88,7 @@ fn test_ternary_right_assoc() {
 
 #[test]
 fn test_nested_ternary() {
-    let mut source = (1..=100)
+    let mut source = (1..=254)
         .map(|_| "1 >= 2 ? 1 : ")
         .collect::<Vec<_>>()
         .join("");
