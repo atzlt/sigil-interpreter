@@ -92,7 +92,7 @@ return stack[first .. first + count]
 | op | wide offset |
 |----|------------|
 
-Unconditional jump. Adds `offset` to the instruction pointer.
+Unconditional jump. Adds `offset` to the instruction pointer (at the `JMP` opcode).
 
 ```
 ip += offset
@@ -104,7 +104,7 @@ ip += offset
 | op | reg | wide offset |
 |----|--------|------------|
 
-Conditional jump. If `stack[reg]` is falsey, adds `offset` to IP; otherwise falls through.
+Conditional jump. If `stack[reg]` is falsey, adds `offset` to IP (the ip of the `TEST` opcode); otherwise falls through.
 
 ```
 if !stack[reg].is_truthy() { ip += offset }

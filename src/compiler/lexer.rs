@@ -50,9 +50,9 @@ pub enum Token {
     False,
     #[token("nil")]
     Nil,
-    #[token("and")]
+    #[token("&")]
     And,
-    #[token("or")]
+    #[token("|")]
     Or,
     // TODO: add more keywords as language design settles
 
@@ -99,6 +99,8 @@ pub enum Token {
     Ge,
     #[token("!")]
     Bang,
+    #[token("?")]
+    Quest,
     #[token(".")]
     Dot,
     #[token(",")]
@@ -166,6 +168,7 @@ impl fmt::Display for Token {
             Token::Gt => write!(f, ">"),
             Token::Ge => write!(f, ">="),
             Token::Bang => write!(f, "!"),
+            Token::Quest => write!(f, "?"),
             Token::Dot => write!(f, "."),
             Token::Comma => write!(f, ","),
             Token::Colon => write!(f, ":"),

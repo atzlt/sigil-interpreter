@@ -11,24 +11,24 @@ fn test_loadk_and_move() {
     // LOADK R0, 42
     let k42 = chunk.add_constant(Value::Number(42.0));
     chunk.emit_opcode(LOADK);
-    chunk.emit_u8(0); // dst R0
-    chunk.emit_u16(k42);
+    chunk.emit(0); // dst R0
+    chunk.emit_wide(k42);
 
     // LOADK R1, 10
     let k10 = chunk.add_constant(Value::Number(10.0));
     chunk.emit_opcode(LOADK);
-    chunk.emit_u8(1); // dst R1
-    chunk.emit_u16(k10);
+    chunk.emit(1); // dst R1
+    chunk.emit_wide(k10);
 
     // MOVE R2, R0
     chunk.emit_opcode(MOVE);
-    chunk.emit_u8(2); // dst R2
-    chunk.emit_u8(0); // src R0
+    chunk.emit(2); // dst R2
+    chunk.emit(0); // src R0
 
     // RETURN R2, 1
     chunk.emit_opcode(RETURN);
-    chunk.emit_u8(2); // first_reg
-    chunk.emit_u8(1); // count
+    chunk.emit(2); // first_reg
+    chunk.emit(1); // count
 
     let registry = FunctionRegistry::new();
     let mut vm = VM::new();
@@ -41,15 +41,15 @@ fn test_bool_and_nil() {
     let mut chunk = Chunk::new();
 
     chunk.emit_opcode(LOADBOOL);
-    chunk.emit_u8(0);
-    chunk.emit_u8(1);
+    chunk.emit(0);
+    chunk.emit(1);
 
     chunk.emit_opcode(LOADNIL);
-    chunk.emit_u8(1);
+    chunk.emit(1);
 
     chunk.emit_opcode(RETURN);
-    chunk.emit_u8(0);
-    chunk.emit_u8(1);
+    chunk.emit(0);
+    chunk.emit(1);
 
     let registry = FunctionRegistry::new();
     let mut vm = VM::new();
@@ -62,23 +62,23 @@ fn test_jmp() {
     let mut chunk = Chunk::new();
 
     chunk.emit_opcode(JMP);
-    chunk.emit_u16(4u16);
+    chunk.emit_wide(7u16);
 
     // Skipped:
     let k99 = chunk.add_constant(Value::Number(99.0));
     chunk.emit_opcode(LOADK);
-    chunk.emit_u8(0);
-    chunk.emit_u16(k99);
+    chunk.emit(0);
+    chunk.emit_wide(k99);
 
     // Runs:
     let k10 = chunk.add_constant(Value::Number(10.0));
     chunk.emit_opcode(LOADK);
-    chunk.emit_u8(1);
-    chunk.emit_u16(k10);
+    chunk.emit(1);
+    chunk.emit_wide(k10);
 
     chunk.emit_opcode(RETURN);
-    chunk.emit_u8(1);
-    chunk.emit_u8(1);
+    chunk.emit(1);
+    chunk.emit(1);
 
     let registry = FunctionRegistry::new();
     let mut vm = VM::new();
@@ -95,21 +95,21 @@ fn test_test_true() {
     let mut chunk = Chunk::new();
 
     chunk.emit_opcode(LOADBOOL);
-    chunk.emit_u8(0);
-    chunk.emit_u8(1);
+    chunk.emit(0);
+    chunk.emit(1);
 
     chunk.emit_opcode(TEST);
-    chunk.emit_u8(0);
-    chunk.emit_u16(4u16);
+    chunk.emit(0);
+    chunk.emit_wide(8u16);
 
     let k99 = chunk.add_constant(Value::Number(99.0));
     chunk.emit_opcode(LOADK);
-    chunk.emit_u8(1);
-    chunk.emit_u16(k99);
+    chunk.emit(1);
+    chunk.emit_wide(k99);
 
     chunk.emit_opcode(RETURN);
-    chunk.emit_u8(1);
-    chunk.emit_u8(1);
+    chunk.emit(1);
+    chunk.emit(1);
 
     let registry = FunctionRegistry::new();
     let mut vm = VM::new();
@@ -126,28 +126,28 @@ fn test_test_false() {
     let mut chunk = Chunk::new();
 
     chunk.emit_opcode(LOADBOOL);
-    chunk.emit_u8(0);
-    chunk.emit_u8(0);
+    chunk.emit(0);
+    chunk.emit(0);
 
     chunk.emit_opcode(TEST);
-    chunk.emit_u8(0);
-    chunk.emit_u16(4u16);
+    chunk.emit(0);
+    chunk.emit_wide(8u16);
 
     // Skipped:
     let k99 = chunk.add_constant(Value::Number(99.0));
     chunk.emit_opcode(LOADK);
-    chunk.emit_u8(1);
-    chunk.emit_u16(k99);
+    chunk.emit(1);
+    chunk.emit_wide(k99);
 
     // Runs:
     let k10 = chunk.add_constant(Value::Number(10.0));
     chunk.emit_opcode(LOADK);
-    chunk.emit_u8(2);
-    chunk.emit_u16(k10);
+    chunk.emit(2);
+    chunk.emit_wide(k10);
 
     chunk.emit_opcode(RETURN);
-    chunk.emit_u8(2);
-    chunk.emit_u8(1);
+    chunk.emit(2);
+    chunk.emit(1);
 
     let registry = FunctionRegistry::new();
     let mut vm = VM::new();

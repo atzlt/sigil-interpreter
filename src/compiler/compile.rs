@@ -4,7 +4,11 @@ use lasso::Spur;
 use logos::Logos;
 use thiserror::Error;
 
-use crate::{compiler::lexer::Token, value::Value, vm::Chunk};
+use crate::{
+    compiler::{lexer::Token, register::RegisterTracker},
+    value::Value,
+    vm::Chunk,
+};
 
 macro_rules! emit {
     ($chunk:expr, $op:ident) => {
@@ -18,18 +22,18 @@ macro_rules! emit {
 
 macro_rules! emit_args {
     ($chunk:expr, wide $val:expr, $($rest:tt)*) => {
-        $chunk.emit_u16($val);
+        $chunk.emit_wide($val);
         emit_args!($chunk, $($rest)*);
     };
     ($chunk:expr, $val:expr, $($rest:tt)*) => {
-        $chunk.emit_u8($val as u8);
+        $chunk.emit($val as u8);
         emit_args!($chunk, $($rest)*);
     };
     ($chunk:expr, wide $val:expr) => {
-        $chunk.emit_u16($val);
+        $chunk.emit_wide($val);
     };
     ($chunk:expr, $val:expr) => {
-        $chunk.emit_u8($val as u8);
+        $chunk.emit($val as u8);
     };
     ($chunk:expr $(,)?) => {};
 }
@@ -39,13 +43,20 @@ use emit_args;
 
 // ── Precedence levels (low → high) ──
 
-const PREC_OR: u8 = 2;
-const PREC_AND: u8 = 3;
-const PREC_EQUALITY: u8 = 4;
-const PREC_COMPARISON: u8 = 5;
-const PREC_TERM: u8 = 6;
-const PREC_FACTOR: u8 = 7;
-const PREC_UNARY: u8 = 8;
+const PREC_TERNARY: u8 = 10;
+const PREC_OR: u8 = 20;
+const PREC_AND: u8 = 30;
+const PREC_EQUALITY: u8 = 40;
+const PREC_COMPARISON: u8 = 50;
+const PREC_TERM: u8 = 60;
+const PREC_FACTOR: u8 = 70;
+const PREC_UNARY: u8 = 80;
+
+#[derive(Clone, Copy)]
+enum Assoc {
+    Left,
+    Right,
+}
 
 // ── Compiler ──
 
@@ -70,19 +81,15 @@ pub struct Compiler<'a> {
     lexer: logos::SpannedIter<'a, Token>,
     chunk: Chunk,
     current: (Token, Span),
-    reg_free: Vec<u8>,
+    regs: RegisterTracker,
 }
 
 pub fn compile(source: &str) -> Result<Chunk> {
-    let mut free = Vec::with_capacity(256);
-    for i in (0..=255).rev() {
-        free.push(i);
-    }
     let mut c = Compiler {
         lexer: Token::lexer(source).spanned(),
         chunk: Chunk::new(),
         current: (Token::default(), Span::default()),
-        reg_free: free,
+        regs: RegisterTracker::new(256),
     };
     c.advance()?;
     let result_reg = c.expression()?;
@@ -138,41 +145,23 @@ impl Compiler<'_> {
         if self.check(expected) {
             self.advance()?;
             Ok(())
-        } else if self.current.0 == Token::Eof {
+        } else {
             Err(CompileError::Unclosed {
                 diag: vec![
                     (open_span, "opened here".to_string()),
-                    (self.current.1.clone(), format!("expected {expected}")),
+                    (
+                        self.current.1.clone(),
+                        format!("expected {expected}, found {}", self.current.0),
+                    ),
                 ],
             })
-        } else {
-            Err(CompileError::Unexpected {
-                diag: vec![(
-                    self.current.1.clone(),
-                    format!("expected {expected}, found {}", self.current.0),
-                )],
-            })
-        }
-    }
-
-    // ── Register allocation ──
-
-    fn alloc_reg(&mut self) -> Result<u8> {
-        self.reg_free
-            .pop()
-            .ok_or_else(|| CompileError::RegisterOverflow)
-    }
-
-    fn free_reg(&mut self, reg: u8) {
-        if !self.reg_free.contains(&reg) {
-            self.reg_free.push(reg);
         }
     }
 
     // ── Entry points ──
 
     fn expression(&mut self) -> Result<u8> {
-        self.parse_precedence(PREC_OR)
+        self.parse_precedence(0)
     }
 
     // ── Pratt parser core ──
@@ -181,7 +170,7 @@ impl Compiler<'_> {
         let mut lhs = self.parse_prefix()?;
 
         loop {
-            let Some(bp) = infix_bp(&self.current.0) else {
+            let Some((bp, assoc)) = infix_bp_assoc(&self.current.0) else {
                 break;
             };
             if bp < min_bp {
@@ -189,8 +178,17 @@ impl Compiler<'_> {
             }
             let op = self.current.0;
             self.advance()?;
-            let rhs = self.parse_precedence(bp + 1)?;
-            lhs = self.emit_binary(&op, lhs, rhs)?;
+
+            if op == Token::Quest {
+                lhs = self.emit_ternary(lhs)?;
+            } else {
+                let next_bp = match assoc {
+                    Assoc::Left => bp + 1,
+                    Assoc::Right => bp,
+                };
+                let rhs = self.parse_precedence(next_bp)?;
+                lhs = self.emit_binary(&op, lhs, rhs)?;
+            }
         }
 
         Ok(lhs)
@@ -255,7 +253,7 @@ impl Compiler<'_> {
 
     fn emit_number(&mut self, n: f64) -> Result<u8> {
         let k = self.chunk.add_constant(Value::Number(n));
-        let reg = self.alloc_reg()?;
+        let reg = self.regs.alloc_temp()?;
         emit!(self.chunk, LOADK, reg, wide k);
         Ok(reg)
     }
@@ -263,19 +261,19 @@ impl Compiler<'_> {
     fn emit_string(&mut self, spur: Spur) -> Result<u8> {
         let s = self.lexer.extras.interner.resolve(&spur).to_string();
         let k = self.chunk.add_constant(Value::String(s));
-        let reg = self.alloc_reg()?;
+        let reg = self.regs.alloc_temp()?;
         emit!(self.chunk, LOADK, reg, wide k);
         Ok(reg)
     }
 
     fn emit_bool(&mut self, b: bool) -> Result<u8> {
-        let reg = self.alloc_reg()?;
+        let reg = self.regs.alloc_temp()?;
         emit!(self.chunk, LOADBOOL, reg, b as u8);
         Ok(reg)
     }
 
     fn emit_nil(&mut self) -> Result<u8> {
-        let reg = self.alloc_reg()?;
+        let reg = self.regs.alloc_temp()?;
         emit!(self.chunk, LOADNIL, reg);
         Ok(reg)
     }
@@ -285,21 +283,77 @@ impl Compiler<'_> {
         self.emit_nil()
     }
 
+    fn emit_test(&mut self, lhs: u8) -> usize {
+        emit!(self.chunk, TEST, lhs, wide 0);
+        self.chunk.last_wide()
+    }
+
+    fn patch_conditional(
+        &mut self,
+        test_ip: usize,
+        if_end: usize,
+        else_start: usize,
+        else_end: usize,
+    ) {
+        self.chunk
+            .patch_wide(if_end + 1, (else_end - if_end) as u16);
+        self.chunk
+            .patch_wide(test_ip + 2, (else_start - test_ip) as u16);
+    }
+
+    fn reuse_or_alloc(&mut self, ops: &[u8]) -> Result<u8> {
+        for &op in ops {
+            if self.regs.is_reusable(op) {
+                return Ok(op);
+            }
+        }
+        self.regs.alloc_temp()
+    }
+
+    fn free_others(&mut self, dst: u8, ops: &[u8]) {
+        for &op in ops {
+            if dst != op {
+                self.regs.free_reg(op);
+            }
+        }
+    }
+
     fn emit_binary(&mut self, op: &Token, lhs: u8, rhs: u8) -> Result<u8> {
         let method = binary_op_method(op);
         let name_idx = self.chunk.add_constant(Value::String(method.into()));
-        let reg = self.alloc_reg()?;
+        let reg = self.reuse_or_alloc(&[lhs, rhs])?;
         emit!(self.chunk, CALL, reg, wide name_idx, 2_u8, lhs, rhs);
-        self.free_reg(lhs);
-        self.free_reg(rhs);
+        self.free_others(reg, &[lhs, rhs]);
         Ok(reg)
     }
 
     fn emit_unary(&mut self, method: &str, operand: u8) -> Result<u8> {
         let name_idx = self.chunk.add_constant(Value::String(method.into()));
-        let reg = self.alloc_reg()?;
+        let reg = self.reuse_or_alloc(&[operand])?;
         emit!(self.chunk, CALL, reg, wide name_idx, 1_u8, operand);
-        self.free_reg(operand);
+        self.free_others(reg, &[operand]);
+        Ok(reg)
+    }
+
+    fn emit_ternary(&mut self, test: u8) -> Result<u8> {
+        let test_ip = self.chunk.end();
+        self.emit_test(test);
+        let reg = self.reuse_or_alloc(&[test])?;
+
+        let mhs = self.parse_precedence(0)?;
+        emit!(self.chunk, MOVE, reg, mhs);
+        let if_end = self.chunk.end();
+        emit!(self.chunk, JMP, wide 0);
+
+        self.consume(&Token::Colon)?;
+
+        let else_start = self.chunk.end();
+        let rhs = self.parse_precedence(PREC_TERNARY)?;
+        emit!(self.chunk, MOVE, reg, rhs);
+        let else_end = self.chunk.end();
+        
+        self.patch_conditional(test_ip, if_end, else_start, else_end);
+        self.free_others(reg, &[test, mhs, rhs]);
         Ok(reg)
     }
 }
@@ -328,14 +382,15 @@ fn binary_op_method(op: &Token) -> &'static str {
 
 // ── Binding power tables ──
 
-fn infix_bp(tok: &Token) -> Option<u8> {
+fn infix_bp_assoc(tok: &Token) -> Option<(u8, Assoc)> {
     match tok {
-        Token::Or => Some(PREC_OR),
-        Token::And => Some(PREC_AND),
-        Token::EqEq | Token::Neq => Some(PREC_EQUALITY),
-        Token::Lt | Token::Le | Token::Gt | Token::Ge => Some(PREC_COMPARISON),
-        Token::Plus | Token::Minus => Some(PREC_TERM),
-        Token::Star | Token::Slash | Token::Percent => Some(PREC_FACTOR),
+        Token::Quest => Some((PREC_TERNARY, Assoc::Right)),
+        Token::Or => Some((PREC_OR, Assoc::Left)),
+        Token::And => Some((PREC_AND, Assoc::Left)),
+        Token::EqEq | Token::Neq => Some((PREC_EQUALITY, Assoc::Left)),
+        Token::Lt | Token::Le | Token::Gt | Token::Ge => Some((PREC_COMPARISON, Assoc::Left)),
+        Token::Plus | Token::Minus => Some((PREC_TERM, Assoc::Left)),
+        Token::Star | Token::Slash | Token::Percent => Some((PREC_FACTOR, Assoc::Left)),
         // TODO: add more infix operators as language design settles
         _ => None,
     }

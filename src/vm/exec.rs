@@ -48,32 +48,32 @@ impl VM {
             if chunk.ip >= chunk.code.len() {
                 return Err(RuntimeError::IpOutOfBounds(chunk.ip).into());
             }
-            let op_byte = chunk.read_u8();
+            let op_byte = chunk.read();
             let op = OpCode::from(op_byte);
             match op {
                 MOVE => {
-                    let dst = chunk.read_u8() as usize;
-                    let src = chunk.read_u8() as usize;
+                    let dst = chunk.read() as usize;
+                    let src = chunk.read() as usize;
                     self.stack[dst] = self.stack[src].clone();
                 }
                 LOADK => {
-                    let dst = chunk.read_u8() as usize;
-                    let k = chunk.read_u16() as usize;
+                    let dst = chunk.read() as usize;
+                    let k = chunk.read_wide() as usize;
                     self.stack[dst] = chunk.constants.get(k as u16).clone();
                 }
                 LOADBOOL => {
-                    let dst = chunk.read_u8() as usize;
-                    let val = chunk.read_u8() != 0;
+                    let dst = chunk.read() as usize;
+                    let val = chunk.read() != 0;
                     self.stack[dst] = Value::Bool(val);
                 }
                 LOADNIL => {
-                    let dst = chunk.read_u8() as usize;
+                    let dst = chunk.read() as usize;
                     self.stack[dst] = Value::Nil;
                 }
                 CALL => {
-                    let dst = chunk.read_u8() as usize;
-                    let name_idx = chunk.read_u16() as usize;
-                    let argc = chunk.read_u8() as usize;
+                    let dst = chunk.read() as usize;
+                    let name_idx = chunk.read_wide() as usize;
+                    let argc = chunk.read() as usize;
 
                     let name = chunk.constants.get(name_idx as u16);
                     let name_str = match name {
@@ -89,35 +89,35 @@ impl VM {
                         .ok_or_else(|| RuntimeError::UndefinedFunction(name_str.to_string()))?;
                     let mut args: SmallVec<[Value; 8]> = SmallVec::with_capacity(argc);
                     for _ in 0..argc {
-                        args.push(self.stack[chunk.read_u8() as usize].clone());
+                        args.push(self.stack[chunk.read() as usize].clone());
                     }
                     let result = func(&args);
                     self.stack[dst] = result;
                 }
                 RETURN => {
-                    let first = chunk.read_u8() as usize;
-                    let count = chunk.read_u8() as usize;
+                    let first = chunk.read() as usize;
+                    let count = chunk.read() as usize;
                     if count == 0 {
                         return Ok(Value::Nil);
                     }
                     return Ok(self.stack[first].clone());
                 }
                 JMP => {
-                    let raw = chunk.read_u16();
-                    let offset = i16::from_le_bytes(raw.to_le_bytes());
-                    let new_ip = chunk.ip as isize + offset as isize;
-                    if new_ip < 0 {
+                    let ip = chunk.ip as isize - 1;
+                    let offset = chunk.read_i16();
+                    let new_ip = ip + offset as isize;
+                    if new_ip < 0 || new_ip as usize >= chunk.code.len() {
                         return Err(RuntimeError::IpOutOfBounds(chunk.ip).into());
                     }
                     chunk.ip = new_ip as usize;
                 }
                 TEST => {
-                    let reg = chunk.read_u8() as usize;
-                    let raw = chunk.read_u16();
-                    let offset = i16::from_le_bytes(raw.to_le_bytes());
+                    let ip = chunk.ip as isize - 1;
+                    let reg = chunk.read() as usize;
+                    let offset = chunk.read_i16();
                     if !self.stack[reg].is_truthy() {
-                        let new_ip = chunk.ip as isize + offset as isize;
-                        if new_ip < 0 {
+                        let new_ip = ip + offset as isize;
+                        if new_ip < 0 || new_ip as usize >= chunk.code.len() {
                             return Err(RuntimeError::IpOutOfBounds(chunk.ip).into());
                         }
                         chunk.ip = new_ip as usize;
