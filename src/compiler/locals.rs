@@ -33,7 +33,7 @@ impl LocalsTracker {
             reg,
             depth: self.current_depth,
         };
-        if self.locals.len() > 0 {
+        if !self.locals.is_empty() {
             assert!(self.locals.last().unwrap().depth <= local.depth);
         }
         self.locals.push(local);
@@ -54,7 +54,7 @@ impl LocalsTracker {
             }
             scanner -= 1;
         }
-        return Ok(self.locals[scanner].reg);
+        Ok(self.locals[scanner].reg)
     }
 
     fn exit_scope(&mut self) -> Vec<u8> {

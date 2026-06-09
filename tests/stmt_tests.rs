@@ -74,10 +74,7 @@ fn test_block_register_reuse() {
 
 #[test]
 fn test_if_true() {
-    assert_eq!(
-        run_program(r"if 1 { return 42; }"),
-        Value::Number(42.0)
-    );
+    assert_eq!(run_program(r"if 1 { return 42; }"), Value::Number(42.0));
 }
 
 #[test]
@@ -194,10 +191,7 @@ fn test_if_long_else_if_chain() {
 
 #[test]
 fn test_while_true_returns_from_body() {
-    assert_eq!(
-        run_program(r"while 1 { return 42; }"),
-        Value::Number(42.0)
-    );
+    assert_eq!(run_program(r"while 1 { return 42; }"), Value::Number(42.0));
 }
 
 #[test]
@@ -436,18 +430,12 @@ fn test_and_or_chain_with_assignment() {
 
 #[test]
 fn test_break_immediate() {
-    assert_eq!(
-        run_program(r"while 1 { break; }"),
-        Value::Nil
-    );
+    assert_eq!(run_program(r"while 1 { break; }"), Value::Nil);
 }
 
 #[test]
 fn test_break_before_return() {
-    assert_eq!(
-        run_program(r"while 1 { break; return 42; }"),
-        Value::Nil
-    );
+    assert_eq!(run_program(r"while 1 { break; return 42; }"), Value::Nil);
 }
 
 #[test]
@@ -486,5 +474,35 @@ fn test_break_nested_outer_via_flag() {
               return flag;"
         ),
         Value::Number(1.0)
+    );
+}
+
+// ── continue ──
+
+#[test]
+fn test_continue_skips_rest_of_body() {
+    assert_eq!(
+        run_program(r"let x = 1; while x < 3 { x = x + 1; continue; x = 3; } return x;"),
+        Value::Number(3.0)
+    );
+}
+
+#[test]
+fn test_continue_conditional() {
+    assert_eq!(
+        run_program(
+            r"let x = 0; let i = 0; while i < 10 { i = i + 1; if i == 3 { continue; } x = x + 1; } return x;"
+        ),
+        Value::Number(9.0)
+    );
+}
+
+#[test]
+fn test_continue_nested_inner() {
+    assert_eq!(
+        run_program(
+            r"let x = 0; while x < 2 { x = x + 1; while x < 80 { x = 100; continue; x = 70; } } return x;"
+        ),
+        Value::Number(100.0)
     );
 }

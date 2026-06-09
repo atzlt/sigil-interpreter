@@ -55,8 +55,7 @@ fn test_return_missing_semicolon() {
 
 #[test]
 fn test_block_out_of_scope() {
-    let err =
-        compile_err(r"let x = 1; { let y = 2; } let z = 3; return x + y + z;");
+    let err = compile_err(r"let x = 1; { let y = 2; } let z = 3; return x + y + z;");
     assert!(matches!(err, CompileError::UndefinedVariable { .. }));
 }
 
@@ -131,5 +130,19 @@ fn test_break_outside_loop() {
 #[test]
 fn test_break_outside_loop_in_block() {
     let err = compile_err(r"{ break; }");
+    assert!(matches!(err, CompileError::Unexpected { .. }));
+}
+
+// ── continue errors ──
+
+#[test]
+fn test_continue_outside_loop() {
+    let err = compile_err(r"continue;");
+    assert!(matches!(err, CompileError::Unexpected { .. }));
+}
+
+#[test]
+fn test_continue_outside_loop_in_block() {
+    let err = compile_err(r"{ continue; }");
     assert!(matches!(err, CompileError::Unexpected { .. }));
 }

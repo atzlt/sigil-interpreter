@@ -34,14 +34,8 @@ fn test_nested_ops() {
 
 #[test]
 fn test_deep_nested_ops() {
-    let mut source = (0..=50)
-        .map(|_| "0 + 0 * (")
-        .collect::<Vec<_>>()
-        .join("");
-    let source2 = (0..=50)
-        .map(|_| ")")
-        .collect::<Vec<_>>()
-        .join("");
+    let mut source = (0..=50).map(|_| "0 + 0 * (").collect::<Vec<_>>().join("");
+    let source2 = (0..=50).map(|_| ")").collect::<Vec<_>>().join("");
     source.push_str("0");
     source.push_str(&source2);
     assert_eq!(run_expr(&source), Value::Number(0.0));

@@ -5,7 +5,9 @@ use logos::Logos;
 use thiserror::Error;
 
 use crate::{
-    compiler::{lexer::Token, locals::LocalsTracker, register::RegisterTracker},
+    compiler::{
+        lexer::Token, locals::LocalsTracker, loop_tracker::LoopTracker, register::RegisterTracker,
+    },
     vm::Chunk,
 };
 
@@ -69,7 +71,7 @@ pub struct Compiler<'a> {
     pub(super) current: (Token, Span),
     pub(super) regs: RegisterTracker,
     pub(super) locals: LocalsTracker,
-    pub(super) loop_exits: Vec<Vec<usize>>,
+    pub(super) loops: LoopTracker,
 }
 
 fn new_compiler(source: &str) -> Compiler<'_> {
@@ -79,7 +81,7 @@ fn new_compiler(source: &str) -> Compiler<'_> {
         current: (Token::default(), Span::default()),
         regs: RegisterTracker::new(256),
         locals: LocalsTracker::new(),
-        loop_exits: Vec::new(),
+        loops: LoopTracker::new(),
     }
 }
 
@@ -171,13 +173,13 @@ impl Compiler<'_> {
     pub(super) fn emit_test(&mut self, lhs: u8) -> usize {
         let ip = self.chunk.end();
         emit!(self.chunk, TEST, lhs, wide 0);
-        return ip;
+        ip
     }
 
     pub(super) fn emit_jmp(&mut self) -> usize {
         let ip = self.chunk.end();
         emit!(self.chunk, JMP, wide 0);
-        return ip;
+        ip
     }
 
     pub(super) fn emit_jump_offset(&mut self, offset: isize) {
@@ -185,11 +187,7 @@ impl Compiler<'_> {
         emit!(self.chunk, JMP, offset[0], offset[1]);
     }
 
-    pub(super) fn patch_if(
-        &mut self,
-        test_ip: usize,
-        if_end: usize,
-    ) {
+    pub(super) fn patch_if(&mut self, test_ip: usize, if_end: usize) {
         self.chunk
             .patch_wide(test_ip + 2, (if_end - test_ip) as u16);
     }
