@@ -66,8 +66,7 @@ impl VM {
                 return Err(RuntimeError::IpOutOfBounds {
                     ip: chunk.ip,
                     span: locus_span(chunk),
-                }
-                .into());
+                });
             }
             let op_byte = chunk.read();
             let op = OpCode::from_repr(op_byte).expect("Unrecognized opcode");
@@ -115,8 +114,7 @@ impl VM {
                             return Err(RuntimeError::UndefinedFunction {
                                 name: "this variable is not callable".into(),
                                 span: locus_span(chunk),
-                            }
-                            .into());
+                            });
                         }
                     };
                     let func =
@@ -153,8 +151,7 @@ impl VM {
                         return Err(RuntimeError::IpOutOfBounds {
                             ip: chunk.ip,
                             span: locus_span(chunk),
-                        }
-                        .into());
+                        });
                     }
                     chunk.ip = new_ip as usize;
                 }
@@ -168,8 +165,7 @@ impl VM {
                             return Err(RuntimeError::IpOutOfBounds {
                                 ip: chunk.ip,
                                 span: locus_span(chunk),
-                            }
-                            .into());
+                            });
                         }
                         chunk.ip = new_ip as usize;
                     }
@@ -178,8 +174,7 @@ impl VM {
                     return Err(RuntimeError::InvalidOpCode {
                         op_byte,
                         span: locus_span(chunk),
-                    }
-                    .into());
+                    });
                 }
             }
         }

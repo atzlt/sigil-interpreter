@@ -168,20 +168,16 @@ impl<'a> Compiler<'a> {
     }
 
     fn emit_binary(&mut self, op: &Token, lhs: u8, rhs: u8, target: Option<u8>) -> Result<u8> {
-        match *op {
-            _ => {
-                let fun = binary_op_lang_item(op);
-                let name_idx = self.chunk.add_constant(Value::Fn(fun));
-                let reg = if let Some(target) = target {
-                    target
-                } else {
-                    self.reuse_or_alloc(&[lhs, rhs])?
-                };
-                emit!(self.chunk, CALL, reg, wide name_idx, 2_u8, lhs, rhs);
-                self.free_other_temps(reg, &[lhs, rhs]);
-                Ok(reg)
-            }
-        }
+        let fun = binary_op_lang_item(op);
+        let name_idx = self.chunk.add_constant(Value::Fn(fun));
+        let reg = if let Some(target) = target {
+            target
+        } else {
+            self.reuse_or_alloc(&[lhs, rhs])?
+        };
+        emit!(self.chunk, CALL, reg, wide name_idx, 2_u8, lhs, rhs);
+        self.free_other_temps(reg, &[lhs, rhs]);
+        Ok(reg)
     }
 
     fn emit_unary(&mut self, fun: FnId, operand: u8, target: Option<u8>) -> Result<u8> {

@@ -23,8 +23,5 @@ fn bench_while_counting(c: &mut Criterion) {
     });
 }
 
-criterion_group!(
-    benches,
-    bench_while_counting,
-);
+criterion_group!(benches, bench_while_counting,);
 criterion_main!(benches);

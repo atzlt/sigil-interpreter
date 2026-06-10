@@ -200,7 +200,10 @@ fn test_and_binds_tighter_than_or() {
 #[test]
 fn test_and_or_chain() {
     // (1 && 2) || (3 && 0) || (0 && 5) || 6  →  2 || 0 || 0 || 6  →  2
-    assert_eq!(run_expr("1 && 2 || 3 && 0 || 0 && 5 || 6"), Value::Number(2.0));
+    assert_eq!(
+        run_expr("1 && 2 || 3 && 0 || 0 && 5 || 6"),
+        Value::Number(2.0)
+    );
 }
 
 #[test]

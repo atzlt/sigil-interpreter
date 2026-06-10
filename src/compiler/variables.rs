@@ -11,11 +11,11 @@ struct GlobalStore {
 impl GlobalStore {
     pub fn declare(&mut self, id: Spur) -> u16 {
         if let Some(slot) = self.slots.get(&id) {
-            return *slot;
+            *slot
         } else {
             self.ptr += 1;
             self.slots.insert(id, self.ptr);
-            return self.ptr;
+            self.ptr
         }
     }
 

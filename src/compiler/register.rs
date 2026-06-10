@@ -31,7 +31,7 @@ impl RegisterTracker {
         }
     }
 
-    fn inc_held(&mut self) -> () {
+    fn inc_held(&mut self) {
         self.held_pt += 1;
         if self.held_pt > self.temp_pt {
             self.temp_pt += 1;
@@ -56,7 +56,7 @@ impl RegisterTracker {
                 return Ok(self.temp_pt as u8);
             }
             self.temp_pt += 1;
-            if self.temp_pt <= self.state.len() - 1 {
+            if self.temp_pt < self.state.len() {
                 let new_reg = self.temp_pt;
                 self.state[new_reg] = RegState::Temp;
                 return Ok(new_reg as u8);
