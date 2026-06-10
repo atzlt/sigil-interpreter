@@ -16,6 +16,12 @@ pub struct RegisterTracker {
     temp_first_run: bool,
 }
 
+impl Default for RegisterTracker {
+    fn default() -> Self {
+        Self::new(256)
+    }
+}
+
 struct RegisterOverflow;
 
 type RegResult<T> = std::result::Result<T, RegisterOverflow>;
@@ -42,7 +48,6 @@ impl RegisterTracker {
         if self.held_pt >= self.state.len() {
             return Err(RegisterOverflow);
         }
-        assert_ne!(self.state[self.held_pt], RegState::Held);
         let new_reg = self.held_pt;
         self.state[new_reg] = RegState::Held;
         self.inc_held();
@@ -116,7 +121,7 @@ impl RegisterTracker {
 
 impl<'a> Compiler<'a> {
     pub(super) fn alloc_temp(&mut self) -> Result<u8> {
-        self.regs.alloc_temp().map_err(|_| {
+        self.frame_mut().regs.alloc_temp().map_err(|_| {
             CompileError::RegisterOverflow((
                 self.current_span().clone(),
                 "register overflown here".to_string(),
@@ -125,7 +130,7 @@ impl<'a> Compiler<'a> {
     }
 
     pub(super) fn alloc_held(&mut self) -> Result<u8> {
-        self.regs.alloc_held().map_err(|_| {
+        self.frame_mut().regs.alloc_held().map_err(|_| {
             CompileError::RegisterOverflow((
                 self.current_span().clone(),
                 "register overflown here".to_string(),
@@ -134,7 +139,7 @@ impl<'a> Compiler<'a> {
     }
 
     pub(super) fn clear_temp(&mut self) {
-        self.regs.clear_temp();
+        self.frame_mut().regs.clear_temp();
     }
 
     // fn clear_all(&mut self) {
@@ -143,7 +148,7 @@ impl<'a> Compiler<'a> {
 
     pub(super) fn reuse_or_alloc(&mut self, ops: &[u8]) -> Result<u8> {
         for &op in ops {
-            if self.regs.is_reusable(op) {
+            if self.frame_mut().regs.is_reusable(op) {
                 return Ok(op);
             }
         }
@@ -153,7 +158,7 @@ impl<'a> Compiler<'a> {
     pub(super) fn free_other_temps(&mut self, dst: u8, ops: &[u8]) {
         for &op in ops {
             if dst != op {
-                self.regs.free_temp(op);
+                self.frame_mut().regs.free_temp(op);
             }
         }
     }

@@ -95,31 +95,31 @@ pub struct Variables {
 
 impl<'a> Compiler<'a> {
     pub(super) fn declare_global(&mut self, id: Spur) -> u16 {
-        self.vars.globals.declare(id)
+        self.frame_mut().vars.globals.declare(id)
     }
 
     pub(super) fn resolve_global(&self, id: Spur) -> Option<u16> {
-        self.vars.globals.resolve(id)
+        self.frame().vars.globals.resolve(id)
     }
 
     pub(super) fn add_local(&mut self, id: Spur, reg: u8) {
-        self.vars.locals.add_local(id, reg);
+        self.frame_mut().vars.locals.add_local(id, reg);
     }
 
     pub(super) fn try_resolve_local(&mut self, id: Spur) -> Option<u8> {
-        self.vars.locals.resolve_local(id)
+        self.frame_mut().vars.locals.resolve_local(id)
     }
 
     pub(super) fn is_top_level(&self) -> bool {
-        self.vars.locals.is_top_level()
+        self.frame().vars.locals.is_top_level()
     }
 
     pub(super) fn enter_scope(&mut self) {
-        self.vars.locals.enter_scope();
+        self.frame_mut().vars.locals.enter_scope();
     }
 
     pub(super) fn exit_scope(&mut self) {
-        let freed = self.vars.locals.exit_scope();
-        self.regs.free_held(&freed);
+        let freed = self.frame_mut().vars.locals.exit_scope();
+        self.frame_mut().regs.free_held(&freed);
     }
 }

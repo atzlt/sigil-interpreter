@@ -136,58 +136,58 @@ impl<'a> Compiler<'a> {
                 diag: (self.prev_span().clone(), "undefined variable".to_string()),
             })?;
         let reg = self.alloc_temp()?;
-        emit!(self.chunk, GETGLB, reg, wide slot);
+        emit!(self.chunk_mut(), GETGLB, reg, wide slot);
         Ok(reg)
     }
 
     fn emit_number(&mut self, n: f64) -> Result<u8> {
-        let k = self.chunk.add_constant(Value::Number(n));
+        let k = self.chunk_mut().add_constant(Value::Number(n));
         let reg = self.alloc_temp()?;
-        emit!(self.chunk, LOADK, reg, wide k);
+        emit!(self.chunk_mut(), LOADK, reg, wide k);
         Ok(reg)
     }
 
     fn emit_string(&mut self, spur: Spur) -> Result<u8> {
         let s = self.intern_resolve(&spur).to_string();
-        let k = self.chunk.add_constant(Value::String(s));
+        let k = self.chunk_mut().add_constant(Value::String(s));
         let reg = self.alloc_temp()?;
-        emit!(self.chunk, LOADK, reg, wide k);
+        emit!(self.chunk_mut(), LOADK, reg, wide k);
         Ok(reg)
     }
 
     fn emit_bool(&mut self, b: bool) -> Result<u8> {
         let reg = self.alloc_temp()?;
-        emit!(self.chunk, LOADBOOL, reg, b as u8);
+        emit!(self.chunk_mut(), LOADBOOL, reg, b as u8);
         Ok(reg)
     }
 
     fn emit_nil(&mut self) -> Result<u8> {
         let reg = self.alloc_temp()?;
-        emit!(self.chunk, LOADNIL, reg);
+        emit!(self.chunk_mut(), LOADNIL, reg);
         Ok(reg)
     }
 
     fn emit_binary(&mut self, op: &Token, lhs: u8, rhs: u8, target: Option<u8>) -> Result<u8> {
         let fun = binary_op_lang_item(op);
-        let name_idx = self.chunk.add_constant(Value::Fn(fun));
+        let name_idx = self.chunk_mut().add_constant(Value::Fn(fun));
         let reg = if let Some(target) = target {
             target
         } else {
             self.reuse_or_alloc(&[lhs, rhs])?
         };
-        emit!(self.chunk, CALL, reg, wide name_idx, 2_u8, lhs, rhs);
+        emit!(self.chunk_mut(), CALL, reg, wide name_idx, 2_u8, lhs, rhs);
         self.free_other_temps(reg, &[lhs, rhs]);
         Ok(reg)
     }
 
     fn emit_unary(&mut self, fun: FnId, operand: u8, target: Option<u8>) -> Result<u8> {
-        let fun = self.chunk.add_constant(Value::Fn(fun));
+        let fun = self.chunk_mut().add_constant(Value::Fn(fun));
         let reg = if let Some(target) = target {
             target
         } else {
             self.reuse_or_alloc(&[operand])?
         };
-        emit!(self.chunk, CALL, reg, wide fun, 1_u8, operand);
+        emit!(self.chunk_mut(), CALL, reg, wide fun, 1_u8, operand);
         self.free_other_temps(reg, &[operand]);
         Ok(reg)
     }
@@ -208,10 +208,10 @@ impl<'a> Compiler<'a> {
 
         self.consume(&Token::Colon)?;
 
-        let else_start = self.chunk.end();
+        let else_start = self.chunk().end();
         let rhs = self.parse_precedence(PREC_TERNARY, target)?;
         self.emit_move(reg, rhs);
-        let else_end = self.chunk.end();
+        let else_end = self.chunk().end();
         self.free_other_temps(reg, &[rhs]);
 
         self.patch_if_else(test_ip, if_end, else_start, else_end);
@@ -230,10 +230,10 @@ impl<'a> Compiler<'a> {
         self.emit_move(reg, lhs);
         let if_end = self.emit_jmp();
 
-        let else_start = self.chunk.end();
+        let else_start = self.chunk().end();
         let rhs = self.parse_precedence(PREC_OR + 1, target)?;
         self.emit_move(reg, rhs);
-        let else_end = self.chunk.end();
+        let else_end = self.chunk().end();
         self.free_other_temps(reg, &[rhs]);
 
         self.patch_if_else(test_ip, if_end, else_start, else_end);
@@ -253,9 +253,9 @@ impl<'a> Compiler<'a> {
         self.emit_move(reg, rhs);
         let if_end = self.emit_jmp();
 
-        let else_start = self.chunk.end();
+        let else_start = self.chunk().end();
         self.emit_move(reg, lhs);
-        let else_end = self.chunk.end();
+        let else_end = self.chunk().end();
         self.free_other_temps(reg, &[rhs]);
 
         self.patch_if_else(test_ip, if_end, else_start, else_end);

@@ -56,6 +56,12 @@ impl Chunk {
         self.code[ip + 1] = val[1];
     }
 
+    pub fn patch_jmp(&mut self, ip: usize, val: isize) {
+        let val = val.to_le_bytes();
+        self.code[ip + 1] = val[0];
+        self.code[ip + 2] = val[1];
+    }
+
     pub fn add_constant(&mut self, value: Value) -> u16 {
         self.constants.intern(value)
     }

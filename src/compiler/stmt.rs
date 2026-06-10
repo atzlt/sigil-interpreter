@@ -71,8 +71,8 @@ impl<'a> Compiler<'a> {
         if self.is_top_level() {
             let slot = self.declare_global(name);
             let rhs = self.expression(None)?;
-            self.regs.free_temp(rhs);
-            emit!(self.chunk, SETGLB, wide slot, rhs);
+            self.frame_mut().regs.free_temp(rhs);
+            emit!(self.chunk_mut(), SETGLB, wide slot, rhs);
         } else {
             let held = self.alloc_held()?;
             let rhs = self.expression(Some(held))?;
@@ -91,11 +91,11 @@ impl<'a> Compiler<'a> {
         if let Some(local) = self.try_resolve_local(id) {
             let reg = self.expression(Some(local))?;
             self.emit_move(local, reg);
-            self.regs.free_temp(reg);
+            self.frame_mut().regs.free_temp(reg);
         } else if let Some(global) = self.resolve_global(id) {
             let reg = self.expression(None)?;
-            emit!(self.chunk, SETGLB, wide global, reg);
-            self.regs.free_temp(reg);
+            emit!(self.chunk_mut(), SETGLB, wide global, reg);
+            self.frame_mut().regs.free_temp(reg);
         } else {
             return Err(CompileError::UndefinedVariable {
                 name: self.intern_resolve(&id).to_string(),
@@ -111,19 +111,19 @@ impl<'a> Compiler<'a> {
         if self.check(&Token::Semicolon) {
             self.consume(&Token::Semicolon)?;
             let reg = self.alloc_temp()?;
-            emit!(self.chunk, LOADNIL, reg);
-            emit!(self.chunk, RETURN, reg);
+            emit!(self.chunk_mut(), LOADNIL, reg);
+            emit!(self.chunk_mut(), RETURN, reg);
         } else {
             let reg = self.expression(None)?;
             self.consume(&Token::Semicolon)?;
-            emit!(self.chunk, RETURN, reg);
+            emit!(self.chunk_mut(), RETURN, reg);
         }
         Ok(())
     }
 
     fn parse_expr_stmt(&mut self) -> Result<()> {
         let reg = self.expression(None)?;
-        self.regs.free_temp(reg);
+        self.frame_mut().regs.free_temp(reg);
         self.consume(&Token::Semicolon)?;
         Ok(())
     }
@@ -131,15 +131,15 @@ impl<'a> Compiler<'a> {
     fn parse_if(&mut self) -> Result<()> {
         self.consume(&Token::If)?;
         let test = self.expression(None)?;
-        let test_ip = self.chunk.end();
+        let test_ip = self.chunk().end();
         self.emit_test(test);
-        self.regs.free_temp(test);
+        self.frame_mut().regs.free_temp(test);
         self.parse_block()?;
-        let if_end = self.chunk.end();
+        let if_end = self.chunk().end();
 
         if self.matches(&Token::Else)? {
             let if_end = self.emit_jmp();
-            let else_start = self.chunk.end();
+            let else_start = self.chunk().end();
             if self.check(&Token::If) {
                 self.parse_if()?;
             } else if self.check(&Token::LBrace) {
@@ -156,7 +156,7 @@ impl<'a> Compiler<'a> {
                     ),
                 });
             }
-            let else_end = self.chunk.end();
+            let else_end = self.chunk().end();
             self.patch_if_else(test_ip, if_end, else_start, else_end);
         } else {
             self.patch_if(test_ip, if_end);
@@ -171,7 +171,7 @@ impl<'a> Compiler<'a> {
             JumpKind::Continue => Token::Continue,
         };
         self.consume(&token)?;
-        if !self.loops.in_loop() {
+        if !self.frame_mut().loops.in_loop() {
             return Err(CompileError::Unexpected {
                 token,
                 diag: (self.prev_span().clone(), format!("{token} outside loop")),
@@ -179,8 +179,8 @@ impl<'a> Compiler<'a> {
         }
         let jmp_ip = self.emit_jmp();
         match kind {
-            JumpKind::Break => self.loops.add_break(jmp_ip),
-            JumpKind::Continue => self.loops.add_continue(jmp_ip),
+            JumpKind::Break => self.frame_mut().loops.add_break(jmp_ip),
+            JumpKind::Continue => self.frame_mut().loops.add_continue(jmp_ip),
         }
         self.consume(&Token::Semicolon)?;
         Ok(())
@@ -188,27 +188,25 @@ impl<'a> Compiler<'a> {
 
     fn parse_while(&mut self) -> Result<()> {
         self.consume(&Token::While)?;
-        let test_start = self.chunk.end();
-        self.loops.push_loop(test_start);
+        let test_start = self.chunk().end();
+        self.frame_mut().loops.push_loop(test_start);
         let test = self.expression(None)?;
         let test_ip = self.emit_test(test);
-        self.regs.free_temp(test);
+        self.frame_mut().regs.free_temp(test);
         self.parse_block()?;
-        let body_end = self.chunk.end();
+        let body_end = self.chunk().end();
         let offset = test_start as isize - body_end as isize;
         self.emit_jump_offset(offset);
-        let while_end = self.chunk.end();
-        let patch = self.loops.pop_loop();
+        let while_end = self.chunk().end();
+        let patch = self.frame_mut().loops.pop_loop();
 
         for &jmp_ip in &patch.breaks {
-            self.chunk
-                .patch_wide(jmp_ip + 1, (while_end as isize - jmp_ip as isize) as u16);
+            self.chunk_mut()
+                .patch_jmp(jmp_ip, while_end as isize - jmp_ip as isize);
         }
         for &jmp_ip in &patch.continues {
-            self.chunk.patch_wide(
-                jmp_ip + 1,
-                (patch.cond_start as isize - jmp_ip as isize) as u16,
-            );
+            self.chunk_mut()
+                .patch_jmp(jmp_ip, patch.cond_start as isize - jmp_ip as isize);
         }
 
         self.patch_if(test_ip, while_end);

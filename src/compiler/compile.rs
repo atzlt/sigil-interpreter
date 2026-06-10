@@ -132,21 +132,19 @@ pub type Result<T> = std::result::Result<T, CompileError>;
 
 pub struct Compiler<'a> {
     lexer: logos::SpannedIter<'a, Token>,
-    pub(super) chunk: Chunk,
+    pub(super) chunks: Vec<Chunk>,
     pub(super) tokens: TokenCursor,
-    pub(super) regs: RegisterTracker,
-    pub(super) vars: Variables,
-    pub(super) loops: LoopTracker,
+    frames: Vec<CompilerFrame>,
+    frame_ptr: usize,
 }
 
 fn new_compiler(source: &str) -> Compiler<'_> {
     Compiler {
         lexer: Token::lexer(source).spanned(),
-        chunk: Chunk::new(),
+        chunks: vec![Chunk::new()],
         tokens: TokenCursor::new(),
-        regs: RegisterTracker::new(256),
-        vars: Variables::default(),
-        loops: LoopTracker::new(),
+        frames: vec![CompilerFrame::new(0)],
+        frame_ptr: 0,
     }
 }
 
@@ -154,8 +152,11 @@ pub fn compile_expr(source: &str) -> Result<Chunk> {
     let mut c = new_compiler(source);
     c.advance()?;
     let result_reg = c.expression(None)?;
-    emit!(c.chunk, RETURN, result_reg);
-    Ok(c.chunk)
+    emit!(c.chunk_mut(), RETURN, result_reg);
+
+    // Temporary code
+    let mut chunk = c.chunks;
+    Ok(chunk.pop().unwrap())
 }
 
 pub fn compile_program(source: &str) -> Result<Chunk> {
@@ -165,14 +166,17 @@ pub fn compile_program(source: &str) -> Result<Chunk> {
         c.statement()?;
     }
     let nil_reg = c.alloc_temp()?;
-    emit!(c.chunk, LOADNIL, nil_reg);
-    emit!(c.chunk, RETURN, nil_reg);
-    Ok(c.chunk)
+    emit!(c.chunk_mut(), LOADNIL, nil_reg);
+    emit!(c.chunk_mut(), RETURN, nil_reg);
+    
+    // Temporary code
+    let mut chunk = c.chunks;
+    Ok(chunk.pop().unwrap())
 }
 
-impl Compiler<'_> {
-    // ── Token handling ──
+// ── Token handling ──
 
+impl Compiler<'_> {
     pub(super) fn advance(&mut self) -> Result<()> {
         self.tokens.advance(&mut self.lexer)
     }
@@ -235,43 +239,62 @@ impl Compiler<'_> {
             })
         }
     }
+}
 
+// Helper functions
+
+impl Compiler<'_> {
     pub(super) fn intern_resolve(&self, spur: &Spur) -> &str {
         self.lexer.extras.interner.resolve(spur)
     }
 
-    // Helper functions
-
     pub(super) fn record_locus(&mut self) {
         let span = self.current_span().clone();
-        self.chunk.record_locus(span);
+        self.chunk_mut().record_locus(span);
+    }
+
+    pub(super) fn frame_mut(&mut self) -> &mut CompilerFrame {
+        &mut self.frames[self.frame_ptr]
+    }
+
+    pub(super) fn frame(&self) -> &CompilerFrame {
+        &self.frames[self.frame_ptr]
+    }
+
+    pub(super) fn chunk_mut(&mut self) -> &mut Chunk {
+        let id = self.frame().chunk_id;
+        &mut self.chunks[id]
+    }
+
+    pub(super) fn chunk(&self) -> &Chunk {
+        &self.chunks[self.frame().chunk_id]
     }
 
     pub(super) fn emit_move(&mut self, dst: u8, src: u8) {
         if dst != src {
-            emit!(self.chunk, MOVE, dst, src);
+            emit!(self.chunk_mut(), MOVE, dst, src);
         }
     }
 
     pub(super) fn emit_test(&mut self, lhs: u8) -> usize {
-        let ip = self.chunk.end();
-        emit!(self.chunk, TEST, lhs, wide 0);
+        let ip = self.chunk_mut().end();
+        emit!(self.chunk_mut(), TEST, lhs, wide 0);
         ip
     }
 
     pub(super) fn emit_jmp(&mut self) -> usize {
-        let ip = self.chunk.end();
-        emit!(self.chunk, JMP, wide 0);
+        let ip = self.chunk_mut().end();
+        emit!(self.chunk_mut(), JMP, wide 0);
         ip
     }
 
     pub(super) fn emit_jump_offset(&mut self, offset: isize) {
         let offset = (offset as i16).to_le_bytes();
-        emit!(self.chunk, JMP, offset[0], offset[1]);
+        emit!(self.chunk_mut(), JMP, offset[0], offset[1]);
     }
 
     pub(super) fn patch_if(&mut self, test_ip: usize, if_end: usize) {
-        self.chunk
+        self.chunk_mut()
             .patch_wide(test_ip + 2, (if_end - test_ip) as u16);
     }
 
@@ -282,9 +305,30 @@ impl Compiler<'_> {
         else_start: usize,
         else_end: usize,
     ) {
-        self.chunk
+        self.chunk_mut()
             .patch_wide(if_end + 1, (else_end - if_end) as u16);
-        self.chunk
+        self.chunk_mut()
             .patch_wide(test_ip + 2, (else_start - test_ip) as u16);
+    }
+}
+
+// Compiler Frames
+
+#[derive(Debug, Default)]
+pub(super) struct CompilerFrame {
+    pub(super) regs: RegisterTracker,
+    pub(super) vars: Variables,
+    pub(super) loops: LoopTracker,
+    chunk_id: usize,
+}
+
+impl CompilerFrame {
+    fn new(chunk_id: usize) -> Self {
+        Self {
+            regs: RegisterTracker::new(256),
+            vars: Variables::default(),
+            loops: LoopTracker::new(),
+            chunk_id,
+        }
     }
 }
