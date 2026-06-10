@@ -1,6 +1,6 @@
-use num_enum::TryFromPrimitive;
+use strum_macros::FromRepr;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromRepr)]
 #[repr(u8)]
 pub enum OpCode {
     MOVE,

@@ -1,7 +1,5 @@
 use std::{fmt, ops::Range};
 
-use num_enum::TryFromPrimitive;
-
 use crate::{constant::ConstantPool, value::Value, vm::OpCode};
 
 #[derive(Debug, Default)]
@@ -96,7 +94,7 @@ impl fmt::Display for Chunk {
         while pos < code.len() {
             let op_byte = code[pos];
             pos += 1;
-            let op = OpCode::try_from_primitive(op_byte).expect("Unrecognized opcode");
+            let op = OpCode::from_repr(op_byte).expect("Unrecognized opcode");
             write!(f, "{:04}  ", pos - 1)?;
             match op {
                 MOVE => {

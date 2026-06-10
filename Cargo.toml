@@ -8,8 +8,9 @@ ahash = "0.8.12"
 ariadne = "0.6.0"
 lasso = "0.7.3"
 logos = "0.15"
-num_enum = "0.7.6"
 smallvec = "1.15.1"
+strum = "0.28.0"
+strum_macros = "0.28.0"
 thiserror = "2.0.18"
 
 [dev-dependencies]

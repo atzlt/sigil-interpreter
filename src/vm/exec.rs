@@ -1,11 +1,10 @@
 use std::ops::Range;
 
-use num_enum::TryFromPrimitive;
 use smallvec::SmallVec;
 use thiserror::Error;
 
 use crate::{
-    registry::FunctionRegistry,
+    functions::{FnType, FunctionRegistry},
     value::Value,
     vm::{Chunk, OpCode},
 };
@@ -54,7 +53,11 @@ impl VM {
         }
     }
 
-    pub fn run(&mut self, chunk: &mut Chunk, registry: &FunctionRegistry) -> Result<Value, RuntimeError> {
+    pub fn run(
+        &mut self,
+        chunk: &mut Chunk,
+        registry: &FunctionRegistry,
+    ) -> Result<Value, RuntimeError> {
         use OpCode::*;
 
         chunk.reset_ip();
@@ -67,7 +70,7 @@ impl VM {
                 .into());
             }
             let op_byte = chunk.read();
-            let op = OpCode::try_from_primitive(op_byte).expect("Unrecognized opcode");
+            let op = OpCode::from_repr(op_byte).expect("Unrecognized opcode");
             match op {
                 MOVE => {
                     let dst = chunk.read() as usize;
@@ -106,11 +109,11 @@ impl VM {
                     let argc = chunk.read() as usize;
 
                     let name = chunk.constants.get(name_idx as u16);
-                    let name_str = match name {
-                        Value::String(s) => s.as_str(),
+                    let fn_id = match name {
+                        Value::Fn(f) => f,
                         _ => {
                             return Err(RuntimeError::UndefinedFunction {
-                                name: "<not a string>".into(),
+                                name: "this variable is not callable".into(),
                                 span: locus_span(chunk),
                             }
                             .into());
@@ -118,18 +121,25 @@ impl VM {
                     };
                     let func =
                         registry
-                            .get(name_str)
+                            .get(fn_id)
                             .ok_or_else(|| RuntimeError::UndefinedFunction {
-                                name: name_str.to_string(),
+                                name: format!("{fn_id}"),
                                 span: locus_span(chunk),
                             })?;
                     let mut args: SmallVec<[_; 8]> = SmallVec::with_capacity(argc);
                     for _ in 0..argc {
                         args.push(&self.stack[chunk.read() as usize]);
                     }
-                    let result = func(&args);
-                    drop(args);
-                    self.stack[dst] = result;
+                    match func {
+                        FnType::Intrinsic(func) => {
+                            let result = func(&args);
+                            drop(args);
+                            self.stack[dst] = result;
+                        }
+                        FnType::Bytecode(_) => {
+                            unimplemented!("Bytecode function compilation not supported")
+                        }
+                    }
                 }
                 RETURN => {
                     let reg = chunk.read() as usize;

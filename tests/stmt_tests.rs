@@ -271,8 +271,8 @@ fn test_assignment_basic() {
 #[test]
 fn test_while_counting_with_assignment() {
     assert_eq!(
-        run_program(r"let i = 0; while i < 5 { i = i + 1; } return i;"),
-        Value::Number(5.0)
+        run_program(r"{ let i = 0; while i < 1000 { i = i + 1; } return i; }"),
+        Value::Number(1000.0)
     );
 }
 

@@ -1,12 +1,48 @@
 use ahash::AHashMap;
+use strum_macros::{Display, FromRepr};
 
 use crate::value::Value;
 
-pub type HostFn = fn(&[&Value]) -> Value;
+pub type IntrinsicFn = fn(&[&Value]) -> Value;
+
+#[derive(Debug)]
+pub struct BytecodeFn {
+    bytecode_offset: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, FromRepr, Display)]
+#[repr(u8)]
+pub enum LangItem {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Rem,
+    Neg,
+    Not,
+    Eq,
+    Neq,
+    Lt,
+    Gt,
+    Le,
+    Ge,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display)]
+pub enum FnId {
+    #[strum(to_string = "lang-item({0})")]
+    LangItem(LangItem),
+}
+
+#[derive(Debug)]
+pub enum FnType {
+    Intrinsic(IntrinsicFn),
+    Bytecode(BytecodeFn),
+}
 
 #[derive(Debug, Default)]
 pub struct FunctionRegistry {
-    entries: AHashMap<String, HostFn>,
+    entries: AHashMap<FnId, FnType>,
 }
 
 impl FunctionRegistry {
@@ -16,15 +52,17 @@ impl FunctionRegistry {
         }
     }
 
-    pub fn register(&mut self, name: &str, func: HostFn) {
-        self.entries.insert(name.to_string(), func);
+    pub fn register(&mut self, name: FnId, func: IntrinsicFn) {
+        self.entries.insert(name, FnType::Intrinsic(func));
     }
 
-    pub fn get(&self, name: &str) -> Option<&HostFn> {
+    pub fn get(&self, name: &FnId) -> Option<&FnType> {
         self.entries.get(name)
     }
 
     pub fn with_std() -> Self {
+        use self::FnId::LangItem;
+        use self::LangItem::*;
         let mut reg = Self::new();
 
         fn add(args: &[&Value]) -> Value {
@@ -85,19 +123,19 @@ impl FunctionRegistry {
             Value::Bool(a >= b)
         }
 
-        reg.register("add", add);
-        reg.register("sub", sub);
-        reg.register("mul", mul);
-        reg.register("div", div);
-        reg.register("mod", rem);
-        reg.register("neg", neg);
-        reg.register("not", not);
-        reg.register("eq", eq);
-        reg.register("neq", neq);
-        reg.register("lt", lt);
-        reg.register("le", le);
-        reg.register("gt", gt);
-        reg.register("ge", ge);
+        reg.register(LangItem(Add), add);
+        reg.register(LangItem(Sub), sub);
+        reg.register(LangItem(Mul), mul);
+        reg.register(LangItem(Div), div);
+        reg.register(LangItem(Rem), rem);
+        reg.register(LangItem(Neg), neg);
+        reg.register(LangItem(Not), not);
+        reg.register(LangItem(Eq), eq);
+        reg.register(LangItem(Neq), neq);
+        reg.register(LangItem(Lt), lt);
+        reg.register(LangItem(Le), le);
+        reg.register(LangItem(Gt), gt);
+        reg.register(LangItem(Ge), ge);
         reg
     }
 }

@@ -1,7 +1,7 @@
 use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use sigil_interpreter::{compiler::compile::compile_program, registry::FunctionRegistry, vm::VM};
+use sigil_interpreter::{compiler::compile::compile_program, functions::FunctionRegistry, vm::VM};
 
 fn compile_and_run(source: &str) {
     let mut chunk = compile_program(source).unwrap();
@@ -23,11 +23,11 @@ fn bench_expr_long_chain(c: &mut Criterion) {
 
 fn bench_while_counting(c: &mut Criterion) {
     let source = "
-        let i = 0;
+        { let i = 0;
         while i < 10000 {
             i = i + 1;
         }
-        return i;
+        return i; }
     ";
     c.bench_function("while/10000_counting", |b| {
         b.iter(|| compile_and_run(black_box(source)))
@@ -36,7 +36,7 @@ fn bench_while_counting(c: &mut Criterion) {
 
 fn bench_fibonacci_iter(c: &mut Criterion) {
     let source = "
-        let n = 500;
+        { let n = 500;
         let a = 0;
         let b = 1;
         let i = 0;
@@ -46,7 +46,7 @@ fn bench_fibonacci_iter(c: &mut Criterion) {
             b = t;
             i = i + 1;
         }
-        return a;
+        return a; }
     ";
     c.bench_function("fibonacci/iter_500", |b| {
         b.iter(|| compile_and_run(black_box(source)))

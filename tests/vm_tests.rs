@@ -1,5 +1,5 @@
 use sigil_interpreter::{
-    registry::FunctionRegistry,
+    functions::FunctionRegistry,
     value::Value,
     vm::{Chunk, OpCode::*, VM},
 };

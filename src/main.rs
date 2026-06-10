@@ -3,7 +3,7 @@ use std::{env, fs, process};
 use ariadne::{Label, Report, ReportKind, Source};
 use sigil_interpreter::{
     compiler::compile::{CompileError, compile_program},
-    registry::FunctionRegistry,
+    functions::FunctionRegistry,
     value::Value,
     vm::{VM, exec::RuntimeError},
 };

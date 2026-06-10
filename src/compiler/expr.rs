@@ -6,6 +6,7 @@ use crate::{
         lexer::Token,
     },
     emit, emit_args,
+    functions::{FnId, LangItem},
     value::Value,
 };
 
@@ -98,12 +99,12 @@ impl<'a> Compiler<'a> {
             Token::Minus => {
                 self.advance()?;
                 let inner = self.parse_precedence(PREC_UNARY)?;
-                self.emit_unary("neg", inner)
+                self.emit_unary(FnId::LangItem(LangItem::Neg), inner)
             }
             Token::Bang => {
                 self.advance()?;
                 let inner = self.parse_precedence(PREC_UNARY)?;
-                self.emit_unary("not", inner)
+                self.emit_unary(FnId::LangItem(LangItem::Not), inner)
             }
             Token::LParen => {
                 let open_span = self.current.1.clone();
@@ -169,8 +170,8 @@ impl<'a> Compiler<'a> {
     fn emit_binary(&mut self, op: &Token, lhs: u8, rhs: u8) -> Result<u8> {
         match *op {
             _ => {
-                let method = binary_op_method(op);
-                let name_idx = self.chunk.add_constant(Value::String(method.into()));
+                let fun = binary_op_lang_item(op);
+                let name_idx = self.chunk.add_constant(Value::Fn(fun));
                 let reg = self.reuse_or_alloc(&[lhs, rhs])?;
                 emit!(self.chunk, CALL, reg, wide name_idx, 2_u8, lhs, rhs);
                 self.free_other_temps(reg, &[lhs, rhs]);
@@ -179,10 +180,10 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn emit_unary(&mut self, method: &str, operand: u8) -> Result<u8> {
-        let name_idx = self.chunk.add_constant(Value::String(method.into()));
+    fn emit_unary(&mut self, fun: FnId, operand: u8) -> Result<u8> {
+        let fun = self.chunk.add_constant(Value::Fn(fun));
         let reg = self.reuse_or_alloc(&[operand])?;
-        emit!(self.chunk, CALL, reg, wide name_idx, 1_u8, operand);
+        emit!(self.chunk, CALL, reg, wide fun, 1_u8, operand);
         self.free_other_temps(reg, &[operand]);
         Ok(reg)
     }
@@ -250,21 +251,19 @@ impl<'a> Compiler<'a> {
     }
 }
 
-// ── Operator → lang-item method name ──
-
-fn binary_op_method(op: &Token) -> &'static str {
+fn binary_op_lang_item(op: &Token) -> FnId {
     match op {
-        Token::Plus => "add",
-        Token::Minus => "sub",
-        Token::Star => "mul",
-        Token::Slash => "div",
-        Token::Percent => "mod",
-        Token::Equal => "eq",
-        Token::Neq => "neq",
-        Token::Lt => "lt",
-        Token::Le => "le",
-        Token::Gt => "gt",
-        Token::Ge => "ge",
+        Token::Plus => FnId::LangItem(LangItem::Add),
+        Token::Minus => FnId::LangItem(LangItem::Sub),
+        Token::Star => FnId::LangItem(LangItem::Mul),
+        Token::Slash => FnId::LangItem(LangItem::Div),
+        Token::Percent => FnId::LangItem(LangItem::Rem),
+        Token::Equal => FnId::LangItem(LangItem::Eq),
+        Token::Neq => FnId::LangItem(LangItem::Neg),
+        Token::Lt => FnId::LangItem(LangItem::Lt),
+        Token::Le => FnId::LangItem(LangItem::Le),
+        Token::Gt => FnId::LangItem(LangItem::Gt),
+        Token::Ge => FnId::LangItem(LangItem::Ge),
         // TODO: add more operators as language design settles
         _ => unreachable!("binary_op_method called on non-binary token"),
     }

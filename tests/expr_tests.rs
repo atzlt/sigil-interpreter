@@ -28,8 +28,13 @@ fn test_unary_neg() {
 
 #[test]
 fn test_nested_ops() {
-    assert_eq!(run_expr("1 + 2 + 3"), Value::Number(6.0));
+    assert_eq!(run_expr("1 + 2 + 3 + 4 + 5 + 6"), Value::Number(21.0));
     assert_eq!(run_expr("1 + 2 * 3 - 4 / 2"), Value::Number(5.0));
+}
+
+#[test]
+fn test_constant_pool() {
+    assert_eq!(run_expr("1 + 1 + 1 + 1 + 1 + 1"), Value::Number(6.0));
 }
 
 #[test]

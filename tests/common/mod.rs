@@ -2,7 +2,7 @@
 
 use sigil_interpreter::{
     compiler::compile::{CompileError, compile, compile_program},
-    registry::FunctionRegistry,
+    functions::FunctionRegistry,
     value::Value,
     vm::VM,
 };
