@@ -56,7 +56,7 @@ impl RegisterTracker {
                 return Ok(self.temp_pt as u8);
             }
             self.temp_pt += 1;
-            if self.temp_pt > self.held_pt {
+            if self.temp_pt <= self.state.len() - 1 {
                 let new_reg = self.temp_pt;
                 self.state[new_reg] = RegState::Temp;
                 return Ok(new_reg as u8);

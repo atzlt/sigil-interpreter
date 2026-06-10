@@ -91,3 +91,16 @@ fn test_unrecognized() {
     let err = compile_expr_err("1 ` 2");
     assert!(matches!(err, CompileError::Unrecognized { .. }));
 }
+
+#[test]
+fn test_nested_ternary() {
+    let mut source = (1..=500)
+        .map(|_| "1 >= 2 ? 1 : ")
+        .collect::<Vec<_>>()
+        .join("");
+    source.push_str("2");
+    assert!(matches!(
+        compile_expr_err(&source),
+        CompileError::RegisterOverflow(_)
+    ));
+}
