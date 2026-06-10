@@ -88,7 +88,6 @@ impl<'a> Compiler<'a> {
     fn parse_assign(&mut self, id: Spur) -> Result<()> {
         let span = self.prev_span.clone();
         self.advance()?;
-        dbg!(self.current.0);
         let reg = self.expression()?;
         if let Some(local) = self.try_resolve_local(id) {
             emit!(self.chunk, MOVE, local, reg);

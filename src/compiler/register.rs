@@ -26,8 +26,15 @@ impl RegisterTracker {
         Self {
             state: vec![RegState::Free; size],
             held_pt: 0,
-            temp_pt: size - 1,
+            temp_pt: 0,
             temp_first_run: true,
+        }
+    }
+
+    fn inc_held(&mut self) -> () {
+        self.held_pt += 1;
+        if self.held_pt > self.temp_pt {
+            self.temp_pt += 1;
         }
     }
 
@@ -38,7 +45,7 @@ impl RegisterTracker {
         assert_ne!(self.state[self.held_pt], RegState::Held);
         let new_reg = self.held_pt;
         self.state[new_reg] = RegState::Held;
-        self.held_pt += 1;
+        self.inc_held();
         Ok(new_reg as u8)
     }
 
@@ -48,13 +55,13 @@ impl RegisterTracker {
                 self.state[self.temp_pt] = RegState::Temp;
                 return Ok(self.temp_pt as u8);
             }
-            self.temp_pt -= 1;
+            self.temp_pt += 1;
             if self.temp_pt > self.held_pt {
                 let new_reg = self.temp_pt;
                 self.state[new_reg] = RegState::Temp;
                 return Ok(new_reg as u8);
             } else {
-                self.temp_pt = self.state.len() - 1;
+                self.temp_pt = self.held_pt;
                 self.temp_first_run = false;
             }
         }
@@ -65,9 +72,9 @@ impl RegisterTracker {
                 self.temp_pt = scanner;
                 return Ok(scanner as u8);
             } else {
-                scanner -= 1;
-                if scanner <= self.held_pt {
-                    scanner = self.state.len() - 1;
+                scanner += 1;
+                if scanner >= self.state.len() {
+                    scanner = self.held_pt;
                 }
                 if scanner == self.temp_pt {
                     return Err(RegisterOverflow);
@@ -97,7 +104,7 @@ impl RegisterTracker {
     }
 
     fn clear_temp(&mut self) {
-        self.temp_pt = self.state.len() - 1;
+        self.temp_pt = self.held_pt;
         self.temp_first_run = true;
     }
 

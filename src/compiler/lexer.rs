@@ -52,9 +52,9 @@ pub enum Token {
     BooleanLit(bool),
     #[token("nil")]
     Nil,
-    #[token("&")]
+    #[token("&&")]
     And,
-    #[token("|")]
+    #[token("||")]
     Or,
     // TODO: add more keywords as language design settles
 
