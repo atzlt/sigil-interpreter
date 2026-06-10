@@ -1,6 +1,5 @@
 use std::ops::Range;
 
-use anyhow::Result;
 use smallvec::SmallVec;
 use thiserror::Error;
 
@@ -46,7 +45,7 @@ impl VM {
         Self::default()
     }
 
-    pub fn run(&mut self, chunk: &mut Chunk, registry: &FunctionRegistry) -> Result<Value> {
+    pub fn run(&mut self, chunk: &mut Chunk, registry: &FunctionRegistry) -> Result<Value, RuntimeError> {
         use OpCode::*;
 
         chunk.reset_ip();

@@ -104,8 +104,19 @@ impl<'a> Compiler<'a> {
             let else_start = self.chunk.end();
             if self.check(&Token::If) {
                 self.parse_if()?;
-            } else {
+            } else if self.check(&Token::LBrace) {
                 self.parse_block()?;
+            } else {
+                return Err(CompileError::Unexpected {
+                    token: self.current.0,
+                    diag: (
+                        self.current.1.clone(),
+                        format!(
+                            "expected else-if clause or else clause, found {}",
+                            self.current.0
+                        ),
+                    ),
+                });
             }
             let else_end = self.chunk.end();
             self.patch_if_else(test_ip, if_end, else_start, else_end);

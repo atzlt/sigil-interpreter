@@ -4,7 +4,8 @@ use ariadne::{Label, Report, ReportKind, Source};
 use sigil_interpreter::{
     compiler::compile::{CompileError, compile_program},
     registry::FunctionRegistry,
-    vm::{self, VM},
+    value::Value,
+    vm::{VM, exec::RuntimeError},
 };
 
 fn report_compile_error(source: &str, err: &CompileError) {
@@ -62,14 +63,14 @@ fn report_compile_error(source: &str, err: &CompileError) {
     }
 }
 
-fn report_runtime_error(source: &str, err: &vm::exec::RuntimeError) {
+fn report_runtime_error(source: &str, err: &RuntimeError) {
     let src = Source::from(source);
 
     match err {
-        vm::exec::RuntimeError::StackOverflow => {
+        RuntimeError::StackOverflow => {
             eprintln!("stack overflow");
         }
-        vm::exec::RuntimeError::InvalidOpCode { op_byte, span } => {
+        RuntimeError::InvalidOpCode { op_byte, span } => {
             Report::build(ReportKind::Error, span.clone())
                 .with_message(format!("invalid opcode: 0x{op_byte:02X}"))
                 .with_label(Label::new(span.clone()).with_message("invalid instruction"))
@@ -77,7 +78,7 @@ fn report_runtime_error(source: &str, err: &vm::exec::RuntimeError) {
                 .eprint(&src)
                 .unwrap();
         }
-        vm::exec::RuntimeError::UndefinedFunction { name, span } => {
+        RuntimeError::UndefinedFunction { name, span } => {
             Report::build(ReportKind::Error, span.clone())
                 .with_message(format!("undefined function: {name}"))
                 .with_label(Label::new(span.clone()).with_message("function not found"))
@@ -85,7 +86,7 @@ fn report_runtime_error(source: &str, err: &vm::exec::RuntimeError) {
                 .eprint(&src)
                 .unwrap();
         }
-        vm::exec::RuntimeError::IpOutOfBounds { ip, span } => {
+        RuntimeError::IpOutOfBounds { ip, span } => {
             Report::build(ReportKind::Error, span.clone())
                 .with_message(format!("instruction pointer out of bounds: {ip}"))
                 .with_label(Label::new(span.clone()).with_message("invalid jump target"))
@@ -124,17 +125,12 @@ fn main() {
     let mut vm = VM::new();
     match vm.run(&mut chunk, &registry) {
         Ok(val) => {
-            if val != sigil_interpreter::value::Value::Nil {
+            if val != Value::Nil {
                 println!("{val}");
             }
         }
         Err(e) => {
-            if let Some(rt) = e.downcast_ref::<vm::exec::RuntimeError>() {
-                report_runtime_error(&source, rt);
-            } else {
-                eprintln!("runtime error: {e}");
-            }
-            process::exit(1);
+            report_runtime_error(&source, &e);
         }
     }
 }
