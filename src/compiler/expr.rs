@@ -28,13 +28,13 @@ enum Assoc {
 }
 
 impl<'a> Compiler<'a> {
-    pub(super) fn expression(&mut self) -> Result<u8> {
+    pub(super) fn expression(&mut self, target: Option<u8>) -> Result<u8> {
         self.record_locus();
-        self.parse_precedence(0)
+        self.parse_precedence(0, target)
     }
 
-    fn parse_precedence(&mut self, min_bp: u8) -> Result<u8> {
-        let mut lhs = self.parse_prefix()?;
+    fn parse_precedence(&mut self, min_bp: u8, target: Option<u8>) -> Result<u8> {
+        let mut lhs = self.parse_prefix(target)?;
 
         loop {
             let Some((bp, assoc)) = infix_bp_assoc(&self.current.0) else {
@@ -48,21 +48,21 @@ impl<'a> Compiler<'a> {
 
             match op {
                 Token::Quest => {
-                    lhs = self.emit_ternary(lhs)?;
+                    lhs = self.emit_ternary(lhs, target)?;
                 }
                 Token::And => {
-                    lhs = self.emit_short_circuit_and(lhs)?;
+                    lhs = self.emit_short_circuit_and(lhs, target)?;
                 }
                 Token::Or => {
-                    lhs = self.emit_short_circuit_or(lhs)?;
+                    lhs = self.emit_short_circuit_or(lhs, target)?;
                 }
                 _ => {
                     let next_bp = match assoc {
                         Assoc::Left => bp + 1,
                         Assoc::Right => bp,
                     };
-                    let rhs = self.parse_precedence(next_bp)?;
-                    lhs = self.emit_binary(&op, lhs, rhs)?;
+                    let rhs = self.parse_precedence(next_bp, target)?;
+                    lhs = self.emit_binary(&op, lhs, rhs, target)?;
                 }
             }
         }
@@ -70,7 +70,7 @@ impl<'a> Compiler<'a> {
         Ok(lhs)
     }
 
-    fn parse_prefix(&mut self) -> Result<u8> {
+    fn parse_prefix(&mut self, target: Option<u8>) -> Result<u8> {
         match &self.current.0 {
             Token::Number(n) => {
                 let val = *n;
@@ -98,18 +98,18 @@ impl<'a> Compiler<'a> {
             }
             Token::Minus => {
                 self.advance()?;
-                let inner = self.parse_precedence(PREC_UNARY)?;
-                self.emit_unary(FnId::LangItem(LangItem::Neg), inner)
+                let inner = self.parse_precedence(PREC_UNARY, target)?;
+                self.emit_unary(FnId::LangItem(LangItem::Neg), inner, target)
             }
             Token::Bang => {
                 self.advance()?;
-                let inner = self.parse_precedence(PREC_UNARY)?;
-                self.emit_unary(FnId::LangItem(LangItem::Not), inner)
+                let inner = self.parse_precedence(PREC_UNARY, target)?;
+                self.emit_unary(FnId::LangItem(LangItem::Not), inner, target)
             }
             Token::LParen => {
                 let open_span = self.current.1.clone();
                 self.advance()?;
-                let inner = self.expression()?;
+                let inner = self.expression(target)?;
                 self.consume_close(&Token::RParen, open_span)?;
                 Ok(inner)
             }
@@ -167,12 +167,16 @@ impl<'a> Compiler<'a> {
         Ok(reg)
     }
 
-    fn emit_binary(&mut self, op: &Token, lhs: u8, rhs: u8) -> Result<u8> {
+    fn emit_binary(&mut self, op: &Token, lhs: u8, rhs: u8, target: Option<u8>) -> Result<u8> {
         match *op {
             _ => {
                 let fun = binary_op_lang_item(op);
                 let name_idx = self.chunk.add_constant(Value::Fn(fun));
-                let reg = self.reuse_or_alloc(&[lhs, rhs])?;
+                let reg = if let Some(target) = target {
+                    target
+                } else {
+                    self.reuse_or_alloc(&[lhs, rhs])?
+                };
                 emit!(self.chunk, CALL, reg, wide name_idx, 2_u8, lhs, rhs);
                 self.free_other_temps(reg, &[lhs, rhs]);
                 Ok(reg)
@@ -180,29 +184,37 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn emit_unary(&mut self, fun: FnId, operand: u8) -> Result<u8> {
+    fn emit_unary(&mut self, fun: FnId, operand: u8, target: Option<u8>) -> Result<u8> {
         let fun = self.chunk.add_constant(Value::Fn(fun));
-        let reg = self.reuse_or_alloc(&[operand])?;
+        let reg = if let Some(target) = target {
+            target
+        } else {
+            self.reuse_or_alloc(&[operand])?
+        };
         emit!(self.chunk, CALL, reg, wide fun, 1_u8, operand);
         self.free_other_temps(reg, &[operand]);
         Ok(reg)
     }
 
-    fn emit_ternary(&mut self, test: u8) -> Result<u8> {
+    fn emit_ternary(&mut self, test: u8, target: Option<u8>) -> Result<u8> {
         let test_ip = self.emit_test(test);
-        let reg = self.reuse_or_alloc(&[test])?;
+        let reg = if let Some(target) = target {
+            target
+        } else {
+            self.reuse_or_alloc(&[test])?
+        };
         self.free_other_temps(reg, &[test]);
 
-        let mhs = self.parse_precedence(0)?;
-        emit!(self.chunk, MOVE, reg, mhs);
+        let mhs = self.parse_precedence(0, target)?;
+        self.emit_move(reg, mhs);
         let if_end = self.emit_jmp();
         self.free_other_temps(reg, &[mhs]);
 
         self.consume(&Token::Colon)?;
 
         let else_start = self.chunk.end();
-        let rhs = self.parse_precedence(PREC_TERNARY)?;
-        emit!(self.chunk, MOVE, reg, rhs);
+        let rhs = self.parse_precedence(PREC_TERNARY, target)?;
+        self.emit_move(reg, rhs);
         let else_end = self.chunk.end();
         self.free_other_temps(reg, &[rhs]);
 
@@ -210,19 +222,21 @@ impl<'a> Compiler<'a> {
         Ok(reg)
     }
 
-    fn emit_short_circuit_or(&mut self, lhs: u8) -> Result<u8> {
+    fn emit_short_circuit_or(&mut self, lhs: u8, target: Option<u8>) -> Result<u8> {
         let test_ip = self.emit_test(lhs);
-        let reg = self.reuse_or_alloc(&[lhs])?;
+        let reg = if let Some(target) = target {
+            target
+        } else {
+            self.reuse_or_alloc(&[lhs])?
+        };
         self.free_other_temps(reg, &[lhs]);
 
-        if reg != lhs {
-            emit!(self.chunk, MOVE, reg, lhs);
-        }
+        self.emit_move(reg, lhs);
         let if_end = self.emit_jmp();
 
         let else_start = self.chunk.end();
-        let rhs = self.parse_precedence(PREC_OR + 1)?;
-        emit!(self.chunk, MOVE, reg, rhs);
+        let rhs = self.parse_precedence(PREC_OR + 1, target)?;
+        self.emit_move(reg, rhs);
         let else_end = self.chunk.end();
         self.free_other_temps(reg, &[rhs]);
 
@@ -230,19 +244,21 @@ impl<'a> Compiler<'a> {
         Ok(reg)
     }
 
-    fn emit_short_circuit_and(&mut self, lhs: u8) -> Result<u8> {
+    fn emit_short_circuit_and(&mut self, lhs: u8, target: Option<u8>) -> Result<u8> {
         let test_ip = self.emit_test(lhs);
-        let reg = self.reuse_or_alloc(&[lhs])?;
+        let reg = if let Some(target) = target {
+            target
+        } else {
+            self.reuse_or_alloc(&[lhs])?
+        };
         self.free_other_temps(reg, &[lhs]);
 
-        let rhs = self.parse_precedence(PREC_AND + 1)?;
-        emit!(self.chunk, MOVE, reg, rhs);
+        let rhs = self.parse_precedence(PREC_AND + 1, target)?;
+        self.emit_move(reg, rhs);
         let if_end = self.emit_jmp();
 
         let else_start = self.chunk.end();
-        if reg != lhs {
-            emit!(self.chunk, MOVE, reg, lhs);
-        }
+        self.emit_move(reg, lhs);
         let else_end = self.chunk.end();
         self.free_other_temps(reg, &[rhs]);
 

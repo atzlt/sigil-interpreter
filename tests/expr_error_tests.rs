@@ -1,7 +1,7 @@
 mod common;
 
 use common::compile_expr_err;
-use sigil_interpreter::compiler::compile::{CompileError, compile};
+use sigil_interpreter::compiler::compile::{CompileError, compile_expr};
 
 #[test]
 fn test_leading_operator() {
@@ -71,13 +71,13 @@ fn test_leading_unary_then_eof() {
 
 #[test]
 fn test_bang_on_number_is_ok() {
-    assert!(compile("!5").is_ok());
+    assert!(compile_expr("!5").is_ok());
 }
 
 #[test]
 fn test_negate_happy() {
-    assert!(compile("-5").is_ok());
-    assert!(compile("- 5").is_ok());
+    assert!(compile_expr("-5").is_ok());
+    assert!(compile_expr("- 5").is_ok());
 }
 
 #[test]

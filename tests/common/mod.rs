@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use sigil_interpreter::{
-    compiler::compile::{CompileError, compile, compile_program},
+    compiler::compile::{CompileError, compile_expr, compile_program},
     functions::FunctionRegistry,
     value::Value,
     vm::VM,
@@ -16,7 +16,7 @@ pub fn run_program(source: &str) -> Value {
 }
 
 pub fn run_expr(source: &str) -> Value {
-    let mut chunk = compile(source).unwrap();
+    let mut chunk = compile_expr(source).unwrap();
     println!("{chunk}");
     let registry = FunctionRegistry::with_std();
     let mut vm = VM::new();
@@ -28,5 +28,5 @@ pub fn compile_err(source: &str) -> CompileError {
 }
 
 pub fn compile_expr_err(source: &str) -> CompileError {
-    compile(source).unwrap_err()
+    compile_expr(source).unwrap_err()
 }

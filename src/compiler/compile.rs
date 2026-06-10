@@ -89,10 +89,10 @@ fn new_compiler(source: &str) -> Compiler<'_> {
     }
 }
 
-pub fn compile(source: &str) -> Result<Chunk> {
+pub fn compile_expr(source: &str) -> Result<Chunk> {
     let mut c = new_compiler(source);
     c.advance()?;
-    let result_reg = c.expression()?;
+    let result_reg = c.expression(None)?;
     emit!(c.chunk, RETURN, result_reg);
     Ok(c.chunk)
 }
@@ -196,6 +196,12 @@ impl Compiler<'_> {
 
     pub(super) fn record_locus(&mut self) {
         self.chunk.record_locus(self.current.1.clone());
+    }
+
+    pub(super) fn emit_move(&mut self, dst: u8, src: u8) {
+        if dst != src {
+            emit!(self.chunk, MOVE, dst, src);
+        }
     }
 
     pub(super) fn emit_test(&mut self, lhs: u8) -> usize {

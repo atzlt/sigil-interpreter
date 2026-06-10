@@ -2,137 +2,143 @@
 
 ## Instruction Format
 
-Variable-length instruction encoding stored as a `Vec<u8>`.
+Variable-length encoding. All multi-byte values are little-endian.
 
-| Operand    | Width | Meaning                   |
-| ---------- | ----- | ------------------------- |
-| `op`       | `u8`  | Opcode                    |
-| `reg`      | `u8`  | Register index (0–255)    |
-| `imm`      | `u8`  | Immediate byte (bool, count) |
-| `const`    | `u16` | Constant pool index (0–65535) |
-| `offset`   | `i16` | Signed jump offset in bytes |
+| Operand | Width | Meaning |
+|---------|-------|---------|
+| `op`    | u8    | Opcode |
+| `reg`   | u8    | Register index (0–255) |
+| `imm`   | u8    | Immediate byte (bool, argc) |
+| `const` | u16   | Constant pool index |
+| `slot`  | u16   | Global variable slot index |
+| `offset`| i16   | Signed jump offset in bytes |
 
-All multi-byte values are little-endian.
+---
+
+## Opcode Table
+
+| Opcode     | Byte | Encoding | Status |
+|------------|------|----------|--------|
+| MOVE       | 0x00 | `[ op ][ dst ][ src ]` | ✅ |
+| LOADK      | 0x01 | `[ op ][ dst ][  wide const  ]` | ✅ |
+| LOADBOOL   | 0x02 | `[ op ][ dst ][ val ]` | ✅ |
+| LOADNIL    | 0x03 | `[ op ][ dst ]` | ✅ |
+| GETGLB     | 0x04 | `[ op ][ dst ][  wide slot  ]` | ✅ |
+| SETGLB     | 0x05 | `[ op ][  wide slot  ][ src ]` | ✅ |
+| CALL       | 0x06 | `[ op ][ dst ][  wide fn  ][ argc ][ arg0 ]...[ argN ]` | ✅ |
+| CALLC      | 0x07 | `[ op ][ dst ][ func ][ argc ][ arg0 ]...[ argN ]` | ❌ |
+| RETURN     | 0x08 | `[ op ][ reg ]` | ✅ |
+| JMP        | 0x09 | `[ op ][  wide offset  ]` | ✅ |
+| TEST       | 0x0A | `[ op ][ reg ][  wide offset  ]` | ✅ |
+| CLOSURE    | 0x0B | `[ op ][ dst ][  wide proto  ]` | ❌ |
+| NEWSTRUCT  | 0x0C | `[ op ][ dst ]` | ❌ |
 
 ---
 
 ## Data Movement
 
 ### MOVE `0x00`
-| op | dst | src |
-|----|--------|--------|
-
+```
+[ op ][ dst ][ src ]
+```
 `stack[dst] = stack[src]`
 
----
-
 ### LOADK `0x01`
-| op | dst | wide const |
-|----|--------|-----------|
-
+```
+[ op ][ dst ][  wide const  ]
+```
 `stack[dst] = constants[const]`
 
----
-
 ### LOADBOOL `0x02`
-| op | dst | val |
-|----|--------|--------|
-
+```
+[ op ][ dst ][ val ]
+```
 `stack[dst] = val != 0`
 
+### LOADNIL `0x03`
+```
+[ op ][ dst ]
+```
+`stack[dst] = nil`
+
 ---
 
-### LOADNIL `0x03`
-| op | dst |
-|----|--------|
+## Global Variables
 
-`stack[dst] = nil`
+### GETGLB `0x04`
+```
+[ op ][ dst ][  wide slot  ]
+```
+Loads `globals[slot]` into `stack[dst]`. Uninitialized → nil.
+
+### SETGLB `0x05`
+```
+[ op ][  wide slot  ][ src ]
+```
+Stores `stack[src]` into `globals[slot]`. Auto-grows the global vector on first access.
 
 ---
 
 ## Calls
 
-### CALL `0x04`
-| op | dst | wide name | argc | arg0 | ... | arg{N} |
-|----|--------|----------|---------|---------|-----|-------------|
-
-Named function call. Looks up `constants[name]` in the function registry, dispatches to the best-matching overload based on runtime argument types. Arguments are specified as individual register indices (non-contiguous). Result written to `stack[dst]`.
-
+### CALL `0x06`
 ```
-stack[dst] = dispatch(constants[name], [stack[arg0], stack[arg1], ...])
+[ op ][ dst ][  wide fn  ][ argc ][ arg0 ]...[ argN ]
 ```
+Looks up `constants[fn]` as `Value::Fn(FnId)` in the function registry. Result → `stack[dst]`.
 
-### CALLC `0x05`
-| op | dst | func | argc | arg0 | ... | arg{N} |
-|----|--------|---------|---------|---------|-----|-------------|
-
-Register-based call. Calls the function value stored in `stack[func]` with individually-specified register arguments. Result written to `stack[dst]`.
-
+### CALLC `0x07` *(unimplemented)*
 ```
-stack[dst] = stack[func]([stack[arg0], stack[arg1], ...])
+[ op ][ dst ][ func ][ argc ][ arg0 ]...[ argN ]
 ```
+Calls the function value in `stack[func]`.
 
 ---
 
 ## Control Flow
 
-### RETURN `0x06`
-| op | reg |
-|----|--------|
-
-Stops execution and returns the value in `stack[reg]`.
-
+### RETURN `0x08`
 ```
-return stack[reg]
+[ op ][ reg ]
 ```
+Halts and returns `stack[reg]`.
+
+### JMP `0x09`
+```
+[ op ][  wide offset  ]
+```
+Unconditional jump: `ip += offset` (relative to the JMP opcode byte).
+
+### TEST `0x0A`
+```
+[ op ][ reg ][  wide offset  ]
+```
+Conditional jump: if `!stack[reg].is_truthy()` then `ip += offset`.
 
 ---
 
-### JMP `0x07`
-| op | wide offset |
-|----|------------|
+## Structures *(unimplemented)*
 
-Unconditional jump. Adds `offset` to the instruction pointer (at the `JMP` opcode).
-
+### CLOSURE `0x0B`
 ```
-ip += offset
+[ op ][ dst ][  wide proto  ]
 ```
+Creates closure from `constants[proto]` → `stack[dst]`.
 
----
-
-### TEST `0x08`
-| op | reg | wide offset |
-|----|--------|------------|
-
-Conditional jump. If `stack[reg]` is falsey, adds `offset` to IP (the ip of the `TEST` opcode); otherwise falls through.
-
+### NEWSTRUCT `0x0C`
 ```
-if !stack[reg].is_truthy() { ip += offset }
+[ op ][ dst ]
 ```
-
----
-
-## Structures (unimplemented)
-
-### CLOSURE `0x09`
-| op | dst | wide proto |
-|----|--------|-----------|
-
-Creates a closure from the function prototype at `constants[proto]`, captures upvalues, stores in `stack[dst]`.
-
-### NEWSTRUCT `0x0A`
-| op | dst |
-|----|--------|
-
-Allocates a new empty struct, stores in `stack[dst]`.
+Allocates empty struct → `stack[dst]`.
 
 ---
 
 ## Truthiness
 
-| Value     | Truthy? |
-| --------- | ------- |
-| `nil`     | false   |
-| `Bool(b)` | `b`     |
+| Value | Truthy? |
+|-------|---------|
+| `nil`   | `false` |
+| `Bool(b)` | `b` |
 | `Number(n)` | `n != 0.0` |
 | `String(s)` | `!s.is_empty()` |
+| `Fn(_)` | `true` |

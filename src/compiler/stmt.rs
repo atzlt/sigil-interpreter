@@ -68,15 +68,15 @@ impl<'a> Compiler<'a> {
 
         self.consume(&Token::Assign)?;
 
-        let rhs = self.expression()?;
-
         if self.is_top_level() {
             let slot = self.declare_global(name);
+            let rhs = self.expression(None)?;
             self.regs.free_temp(rhs);
             emit!(self.chunk, SETGLB, wide slot, rhs);
         } else {
             let held = self.alloc_held()?;
-            emit!(self.chunk, MOVE, held, rhs);
+            let rhs = self.expression(Some(held))?;
+            self.emit_move(held, rhs);
             self.free_other_temps(held, &[rhs]);
             self.add_local(name, held);
         }
@@ -88,18 +88,20 @@ impl<'a> Compiler<'a> {
     fn parse_assign(&mut self, id: Spur) -> Result<()> {
         let span = self.prev_span.clone();
         self.advance()?;
-        let reg = self.expression()?;
         if let Some(local) = self.try_resolve_local(id) {
-            emit!(self.chunk, MOVE, local, reg);
+            let reg = self.expression(Some(local))?;
+            self.emit_move(local, reg);
+            self.regs.free_temp(reg);
         } else if let Some(global) = self.resolve_global(id) {
+            let reg = self.expression(None)?;
             emit!(self.chunk, SETGLB, wide global, reg);
+            self.regs.free_temp(reg);
         } else {
             return Err(CompileError::UndefinedVariable {
                 name: self.intern_resolve(&id).to_string(),
                 diag: (span, "undefined variable".to_string()),
             });
         }
-        self.regs.free_temp(reg);
         self.consume(&Token::Semicolon)?;
         Ok(())
     }
@@ -112,7 +114,7 @@ impl<'a> Compiler<'a> {
             emit!(self.chunk, LOADNIL, reg);
             emit!(self.chunk, RETURN, reg);
         } else {
-            let reg = self.expression()?;
+            let reg = self.expression(None)?;
             self.consume(&Token::Semicolon)?;
             emit!(self.chunk, RETURN, reg);
         }
@@ -120,7 +122,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn parse_expr_stmt(&mut self) -> Result<()> {
-        let reg = self.expression()?;
+        let reg = self.expression(None)?;
         self.regs.free_temp(reg);
         self.consume(&Token::Semicolon)?;
         Ok(())
@@ -128,7 +130,7 @@ impl<'a> Compiler<'a> {
 
     fn parse_if(&mut self) -> Result<()> {
         self.consume(&Token::If)?;
-        let test = self.expression()?;
+        let test = self.expression(None)?;
         let test_ip = self.chunk.end();
         self.emit_test(test);
         self.regs.free_temp(test);
@@ -188,7 +190,7 @@ impl<'a> Compiler<'a> {
         self.consume(&Token::While)?;
         let test_start = self.chunk.end();
         self.loops.push_loop(test_start);
-        let test = self.expression()?;
+        let test = self.expression(None)?;
         let test_ip = self.emit_test(test);
         self.regs.free_temp(test);
         self.parse_block()?;
