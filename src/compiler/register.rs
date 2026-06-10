@@ -118,7 +118,7 @@ impl<'a> Compiler<'a> {
     pub(super) fn alloc_temp(&mut self) -> Result<u8> {
         self.regs.alloc_temp().map_err(|_| {
             CompileError::RegisterOverflow((
-                self.current.1.clone(),
+                self.current_span().clone(),
                 "register overflown here".to_string(),
             ))
         })
@@ -127,7 +127,7 @@ impl<'a> Compiler<'a> {
     pub(super) fn alloc_held(&mut self) -> Result<u8> {
         self.regs.alloc_held().map_err(|_| {
             CompileError::RegisterOverflow((
-                self.current.1.clone(),
+                self.current_span().clone(),
                 "register overflown here".to_string(),
             ))
         })

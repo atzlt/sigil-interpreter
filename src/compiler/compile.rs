@@ -44,10 +44,75 @@ macro_rules! emit_args {
 use emit;
 use emit_args;
 
-// ── Compiler ──
+// ── Token cursor ──
 
 type Span = Range<usize>;
 type SpanInfo = (Span, String);
+
+pub(super) struct TokenCursor {
+    current: (Token, Span),
+    next: Option<(Token, Span)>,
+    prev_span: Span,
+}
+
+impl TokenCursor {
+    fn new() -> Self {
+        Self {
+            current: (Token::default(), Span::default()),
+            next: None,
+            prev_span: Span::default(),
+        }
+    }
+
+    fn token(&self) -> &Token {
+        &self.current.0
+    }
+
+    fn span(&self) -> &Span {
+        &self.current.1
+    }
+
+    fn prev_span(&self) -> &Span {
+        &self.prev_span
+    }
+
+    fn advance(&mut self, lexer: &mut logos::SpannedIter<Token>) -> Result<()> {
+        self.prev_span = self.current.1.clone();
+        if let Some(peeked) = self.next.take() {
+            self.current = peeked;
+            return Ok(());
+        }
+        let spanned = lexer
+            .next()
+            .or_else(|| Some((Ok(Token::Eof), lexer.span())))
+            .unwrap();
+        let token = spanned.0.map_err(|_| {
+            CompileError::Unrecognized((spanned.1.clone(), "unexpected token".to_string()))
+        })?;
+        self.current = (token, spanned.1);
+        Ok(())
+    }
+
+    fn peek(&mut self, lexer: &mut logos::SpannedIter<Token>) -> Result<&Token> {
+        if self.next.is_none() {
+            let spanned = lexer
+                .next()
+                .or_else(|| Some((Ok(Token::Eof), lexer.span())))
+                .unwrap();
+            let token = spanned.0.map_err(|_| {
+                CompileError::Unrecognized((spanned.1.clone(), "unexpected token".to_string()))
+            })?;
+            self.next = Some((token, spanned.1));
+        }
+        Ok(&self.next.as_ref().unwrap().0)
+    }
+
+    fn check(&self, tok: &Token) -> bool {
+        std::mem::discriminant(&self.current.0) == std::mem::discriminant(tok)
+    }
+}
+
+// ── Compiler ──
 
 #[derive(Error, Debug, Clone)]
 pub enum CompileError {
@@ -68,24 +133,20 @@ pub type Result<T> = std::result::Result<T, CompileError>;
 pub struct Compiler<'a> {
     lexer: logos::SpannedIter<'a, Token>,
     pub(super) chunk: Chunk,
-    pub(super) current: (Token, Span),
-    pub(super) prev_span: Span,
+    pub(super) tokens: TokenCursor,
     pub(super) regs: RegisterTracker,
     pub(super) vars: Variables,
     pub(super) loops: LoopTracker,
-    peeked: Option<(Token, Span)>,
 }
 
 fn new_compiler(source: &str) -> Compiler<'_> {
     Compiler {
         lexer: Token::lexer(source).spanned(),
         chunk: Chunk::new(),
-        current: (Token::default(), Span::default()),
-        prev_span: Span::default(),
+        tokens: TokenCursor::new(),
         regs: RegisterTracker::new(256),
         vars: Variables::default(),
         loops: LoopTracker::new(),
-        peeked: None,
     }
 }
 
@@ -113,40 +174,27 @@ impl Compiler<'_> {
     // ── Token handling ──
 
     pub(super) fn advance(&mut self) -> Result<()> {
-        self.prev_span = self.current.1.clone();
-        if let Some(peeked) = self.peeked.take() {
-            self.current = peeked;
-            return Ok(());
-        }
-        let spanned = self
-            .lexer
-            .next()
-            .or_else(|| Some((Ok(Token::Eof), self.lexer.span())))
-            .unwrap();
-        let token = spanned.0.map_err(|_| {
-            CompileError::Unrecognized((spanned.1.clone(), "unexpected token".to_string()))
-        })?;
-        self.current = (token, spanned.1);
-        Ok(())
+        self.tokens.advance(&mut self.lexer)
     }
 
     pub(super) fn peek(&mut self) -> Result<&Token> {
-        if self.peeked.is_none() {
-            let spanned = self
-                .lexer
-                .next()
-                .or_else(|| Some((Ok(Token::Eof), self.lexer.span())))
-                .unwrap();
-            let token = spanned.0.map_err(|_| {
-                CompileError::Unrecognized((spanned.1.clone(), "unexpected token".to_string()))
-            })?;
-            self.peeked = Some((token, spanned.1));
-        }
-        Ok(&self.peeked.as_ref().unwrap().0)
+        self.tokens.peek(&mut self.lexer)
     }
 
-    pub(super) fn check(&self, tok: &Token) -> bool {
-        std::mem::discriminant(&self.current.0) == std::mem::discriminant(tok)
+    pub(super) fn check(&mut self, token: &Token) -> bool {
+        self.tokens.check(token)
+    }
+
+    pub(super) fn current(&mut self) -> Token {
+        *self.tokens.token()
+    }
+
+    pub(super) fn current_span(&mut self) -> &Span {
+        self.tokens.span()
+    }
+
+    pub(super) fn prev_span(&mut self) -> &Span {
+        self.tokens.prev_span()
     }
 
     pub(super) fn matches(&mut self, tok: &Token) -> Result<bool> {
@@ -164,10 +212,10 @@ impl Compiler<'_> {
             Ok(())
         } else {
             Err(CompileError::Unexpected {
-                token: self.current.0,
+                token: self.current(),
                 diag: (
-                    self.current.1.clone(),
-                    format!("expected {expected}, found {}", self.current.0),
+                    self.current_span().clone(),
+                    format!("expected {expected}, found {}", self.current()),
                 ),
             })
         }
@@ -181,8 +229,8 @@ impl Compiler<'_> {
             Err(CompileError::Unclosed {
                 open: (open_span, "opened here".to_string()),
                 close: (
-                    self.current.1.clone(),
-                    format!("expected {expected}, found {}", self.current.0),
+                    self.current_span().clone(),
+                    format!("expected {expected}, found {}", self.current()),
                 ),
             })
         }
@@ -195,7 +243,8 @@ impl Compiler<'_> {
     // Helper functions
 
     pub(super) fn record_locus(&mut self) {
-        self.chunk.record_locus(self.current.1.clone());
+        let span = self.current_span().clone();
+        self.chunk.record_locus(span);
     }
 
     pub(super) fn emit_move(&mut self, dst: u8, src: u8) {

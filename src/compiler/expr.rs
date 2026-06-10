@@ -37,13 +37,13 @@ impl<'a> Compiler<'a> {
         let mut lhs = self.parse_prefix(target)?;
 
         loop {
-            let Some((bp, assoc)) = infix_bp_assoc(&self.current.0) else {
+            let Some((bp, assoc)) = infix_bp_assoc(&self.current()) else {
                 break;
             };
             if bp < min_bp {
                 break;
             }
-            let op = self.current.0;
+            let op = self.current();
             self.advance()?;
 
             match op {
@@ -71,7 +71,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn parse_prefix(&mut self, target: Option<u8>) -> Result<u8> {
-        match &self.current.0 {
+        match &self.current() {
             Token::Number(n) => {
                 let val = *n;
                 self.advance()?;
@@ -107,17 +107,17 @@ impl<'a> Compiler<'a> {
                 self.emit_unary(FnId::LangItem(LangItem::Not), inner, target)
             }
             Token::LParen => {
-                let open_span = self.current.1.clone();
+                let open_span = self.current_span().clone();
                 self.advance()?;
                 let inner = self.expression(target)?;
                 self.consume_close(&Token::RParen, open_span)?;
                 Ok(inner)
             }
             _ => Err(CompileError::Unexpected {
-                token: self.current.0,
+                token: self.current(),
                 diag: (
-                    self.current.1.clone(),
-                    format!("expected expression, found {}", &self.current.0),
+                    self.current_span().clone(),
+                    format!("expected expression, found {}", &self.current()),
                 ),
             }),
         }
@@ -133,7 +133,7 @@ impl<'a> Compiler<'a> {
             .resolve_global(name)
             .ok_or_else(|| CompileError::UndefinedVariable {
                 name: self.intern_resolve(&name).to_string(),
-                diag: (self.prev_span.clone(), "undefined variable".to_string()),
+                diag: (self.prev_span().clone(), "undefined variable".to_string()),
             })?;
         let reg = self.alloc_temp()?;
         emit!(self.chunk, GETGLB, reg, wide slot);

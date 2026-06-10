@@ -17,7 +17,7 @@ impl<'a> Compiler<'a> {
     pub(super) fn statement(&mut self) -> Result<()> {
         self.clear_temp();
         self.record_locus();
-        match self.current.0 {
+        match self.current() {
             Token::Let => self.parse_let_decl(),
             Token::Return => self.parse_return_stmt(),
             Token::Break => self.parse_jump(JumpKind::Break),
@@ -38,7 +38,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn parse_block(&mut self) -> Result<()> {
-        let open_span = self.current.1.clone();
+        let open_span = self.current_span().clone();
         self.consume(&Token::LBrace)?;
         self.enter_scope();
         while !self.check(&Token::RBrace) && !self.check(&Token::Eof) {
@@ -52,16 +52,16 @@ impl<'a> Compiler<'a> {
     fn parse_let_decl(&mut self) -> Result<()> {
         self.consume(&Token::Let)?;
 
-        let name = if let Token::Identifier(spur) = self.current.0 {
+        let name = if let Token::Identifier(spur) = self.current() {
             let name = spur;
             self.advance()?;
             name
         } else {
             return Err(CompileError::Unexpected {
-                token: self.current.0,
+                token: self.current(),
                 diag: (
-                    self.current.1.clone(),
-                    format!("expected identifier, found {}", self.current.0),
+                    self.current_span().clone(),
+                    format!("expected identifier, found {}", self.current()),
                 ),
             });
         };
@@ -86,7 +86,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn parse_assign(&mut self, id: Spur) -> Result<()> {
-        let span = self.prev_span.clone();
+        let span = self.prev_span().clone();
         self.advance()?;
         if let Some(local) = self.try_resolve_local(id) {
             let reg = self.expression(Some(local))?;
@@ -146,12 +146,12 @@ impl<'a> Compiler<'a> {
                 self.parse_block()?;
             } else {
                 return Err(CompileError::Unexpected {
-                    token: self.current.0,
+                    token: self.current(),
                     diag: (
-                        self.current.1.clone(),
+                        self.current_span().clone(),
                         format!(
                             "expected else-if clause or else clause, found {}",
-                            self.current.0
+                            self.current()
                         ),
                     ),
                 });
@@ -174,7 +174,7 @@ impl<'a> Compiler<'a> {
         if !self.loops.in_loop() {
             return Err(CompileError::Unexpected {
                 token,
-                diag: (self.prev_span.clone(), format!("{token} outside loop")),
+                diag: (self.prev_span().clone(), format!("{token} outside loop")),
             });
         }
         let jmp_ip = self.emit_jmp();
