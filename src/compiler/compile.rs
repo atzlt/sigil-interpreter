@@ -6,7 +6,7 @@ use thiserror::Error;
 
 use crate::{
     compiler::{
-        lexer::Token, locals::LocalsTracker, loop_tracker::LoopTracker, register::RegisterTracker,
+        lexer::Token, loop_tracker::LoopTracker, register::RegisterTracker, variables::Variables,
     },
     vm::Chunk,
 };
@@ -71,8 +71,9 @@ pub struct Compiler<'a> {
     pub(super) current: (Token, Span),
     pub(super) prev_span: Span,
     pub(super) regs: RegisterTracker,
-    pub(super) locals: LocalsTracker,
+    pub(super) vars: Variables,
     pub(super) loops: LoopTracker,
+    peeked: Option<(Token, Span)>,
 }
 
 fn new_compiler(source: &str) -> Compiler<'_> {
@@ -82,8 +83,9 @@ fn new_compiler(source: &str) -> Compiler<'_> {
         current: (Token::default(), Span::default()),
         prev_span: Span::default(),
         regs: RegisterTracker::new(256),
-        locals: LocalsTracker::new(),
+        vars: Variables::default(),
         loops: LoopTracker::new(),
+        peeked: None,
     }
 }
 
@@ -112,6 +114,10 @@ impl Compiler<'_> {
 
     pub(super) fn advance(&mut self) -> Result<()> {
         self.prev_span = self.current.1.clone();
+        if let Some(peeked) = self.peeked.take() {
+            self.current = peeked;
+            return Ok(());
+        }
         let spanned = self
             .lexer
             .next()
@@ -122,6 +128,21 @@ impl Compiler<'_> {
         })?;
         self.current = (token, spanned.1);
         Ok(())
+    }
+
+    pub(super) fn peek(&mut self) -> Result<&Token> {
+        if self.peeked.is_none() {
+            let spanned = self
+                .lexer
+                .next()
+                .or_else(|| Some((Ok(Token::Eof), self.lexer.span())))
+                .unwrap();
+            let token = spanned.0.map_err(|_| {
+                CompileError::Unrecognized((spanned.1.clone(), "unexpected token".to_string()))
+            })?;
+            self.peeked = Some((token, spanned.1));
+        }
+        Ok(&self.peeked.as_ref().unwrap().0)
     }
 
     pub(super) fn check(&self, tok: &Token) -> bool {

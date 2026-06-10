@@ -1,5 +1,7 @@
 use std::{fmt, ops::Range};
 
+use num_enum::TryFromPrimitive;
+
 use crate::{constant::ConstantPool, value::Value, vm::OpCode};
 
 #[derive(Debug, Default)]
@@ -88,22 +90,23 @@ impl Chunk {
 
 impl fmt::Display for Chunk {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use OpCode::*;
         let mut pos = 0;
         let code = &self.code;
         while pos < code.len() {
             let op_byte = code[pos];
             pos += 1;
-            let op = OpCode::from(op_byte);
+            let op = OpCode::try_from_primitive(op_byte).expect("Unrecognized opcode");
             write!(f, "{:04}  ", pos - 1)?;
             match op {
-                OpCode::MOVE => {
+                MOVE => {
                     let dst = code[pos];
                     pos += 1;
                     let src = code[pos];
                     pos += 1;
                     writeln!(f, "MOVE    R{dst} R{src}")?;
                 }
-                OpCode::LOADK => {
+                LOADK => {
                     let dst = code[pos];
                     pos += 1;
                     let k = u16::from_le_bytes([code[pos], code[pos + 1]]);
@@ -111,7 +114,7 @@ impl fmt::Display for Chunk {
                     let val = self.constants.get(k);
                     writeln!(f, "LOADK   R{dst} K{k} ; {val}")?;
                 }
-                OpCode::LOADBOOL => {
+                LOADBOOL => {
                     let dst = code[pos];
                     pos += 1;
                     let val = code[pos];
@@ -119,12 +122,26 @@ impl fmt::Display for Chunk {
                     let b = val != 0;
                     writeln!(f, "LOADBOOL R{dst} {b}")?;
                 }
-                OpCode::LOADNIL => {
+                LOADNIL => {
                     let dst = code[pos];
                     pos += 1;
                     writeln!(f, "LOADNIL R{dst}")?;
                 }
-                OpCode::CALL => {
+                GETGLB => {
+                    let dst = code[pos];
+                    pos += 1;
+                    let slot = u16::from_le_bytes([code[pos], code[pos + 1]]);
+                    pos += 2;
+                    writeln!(f, "GETGLB  R{dst} G{slot}")?;
+                }
+                SETGLB => {
+                    let src = code[pos];
+                    pos += 1;
+                    let slot = u16::from_le_bytes([code[pos], code[pos + 1]]);
+                    pos += 2;
+                    writeln!(f, "SETGLB  G{slot} R{src}")?;
+                }
+                CALL => {
                     let dst = code[pos];
                     pos += 1;
                     let name_idx = u16::from_le_bytes([code[pos], code[pos + 1]]);
@@ -141,7 +158,7 @@ impl fmt::Display for Chunk {
                         .collect();
                     writeln!(f, "CALL    R{dst} {name} [{}]", args.join(", "))?;
                 }
-                OpCode::CALLC => {
+                CALLC => {
                     let dst = code[pos];
                     pos += 1;
                     let func = code[pos];
@@ -157,18 +174,18 @@ impl fmt::Display for Chunk {
                         .collect();
                     writeln!(f, "CALLC   R{dst} R{func} [{}]", args.join(", "))?;
                 }
-                OpCode::RETURN => {
+                RETURN => {
                     let reg = code[pos];
                     pos += 1;
                     writeln!(f, "RETURN  R{reg}")?;
                 }
-                OpCode::JMP => {
+                JMP => {
                     let offset = i16::from_le_bytes([code[pos], code[pos + 1]]);
                     pos += 2;
                     let target = pos as isize - 3 + offset as isize;
                     writeln!(f, "JMP     {offset:+} -> {target}")?;
                 }
-                OpCode::TEST => {
+                TEST => {
                     let reg = code[pos];
                     pos += 1;
                     let offset = i16::from_le_bytes([code[pos], code[pos + 1]]);
@@ -176,14 +193,14 @@ impl fmt::Display for Chunk {
                     let target = pos as isize - 4 + offset as isize;
                     writeln!(f, "TEST    R{reg} {offset:+} -> {target}")?;
                 }
-                OpCode::CLOSURE => {
+                CLOSURE => {
                     let dst = code[pos];
                     pos += 1;
                     let proto = u16::from_le_bytes([code[pos], code[pos + 1]]);
                     pos += 2;
                     writeln!(f, "CLOSURE R{dst} K{proto}")?;
                 }
-                OpCode::NEWSTRUCT => {
+                NEWSTRUCT => {
                     let dst = code[pos];
                     pos += 1;
                     writeln!(f, "NEWSTRUCT R{dst}")?;

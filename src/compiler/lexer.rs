@@ -86,9 +86,9 @@ pub enum Token {
     #[token("%")]
     Percent,
     #[token("=")]
-    Equals,
+    Assign,
     #[token("==")]
-    EqEq,
+    Equal,
     #[token("!=")]
     Neq,
     #[token("<")]
@@ -163,8 +163,8 @@ impl fmt::Display for Token {
             Token::Star => write!(f, "*"),
             Token::Slash => write!(f, "/"),
             Token::Percent => write!(f, "%"),
-            Token::Equals => write!(f, "="),
-            Token::EqEq => write!(f, "=="),
+            Token::Assign => write!(f, "="),
+            Token::Equal => write!(f, "=="),
             Token::Neq => write!(f, "!="),
             Token::Lt => write!(f, "<"),
             Token::Le => write!(f, "<="),

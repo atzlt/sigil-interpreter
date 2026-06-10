@@ -1,5 +1,6 @@
 use std::ops::Range;
 
+use num_enum::TryFromPrimitive;
 use smallvec::SmallVec;
 use thiserror::Error;
 
@@ -30,12 +31,14 @@ const STACK_SIZE: usize = 256;
 #[derive(Debug)]
 pub struct VM {
     pub stack: [Value; STACK_SIZE],
+    pub globals: Vec<Value>,
 }
 
 impl Default for VM {
     fn default() -> Self {
         VM {
             stack: std::array::from_fn(|_| Value::Nil),
+            globals: Vec::new(),
         }
     }
 }
@@ -43,6 +46,12 @@ impl Default for VM {
 impl VM {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    fn ensure_global(&mut self, slot: usize) {
+        if slot >= self.globals.len() {
+            self.globals.resize(slot + 1, Value::Nil);
+        }
     }
 
     pub fn run(&mut self, chunk: &mut Chunk, registry: &FunctionRegistry) -> Result<Value, RuntimeError> {
@@ -58,7 +67,7 @@ impl VM {
                 .into());
             }
             let op_byte = chunk.read();
-            let op = OpCode::from(op_byte);
+            let op = OpCode::try_from_primitive(op_byte).expect("Unrecognized opcode");
             match op {
                 MOVE => {
                     let dst = chunk.read() as usize;
@@ -78,6 +87,18 @@ impl VM {
                 LOADNIL => {
                     let dst = chunk.read() as usize;
                     self.stack[dst] = Value::Nil;
+                }
+                GETGLB => {
+                    let dst = chunk.read() as usize;
+                    let slot = chunk.read_wide() as usize;
+                    self.ensure_global(slot);
+                    self.stack[dst] = self.globals[slot].clone();
+                }
+                SETGLB => {
+                    let slot = chunk.read_wide() as usize;
+                    let src = chunk.read() as usize;
+                    self.ensure_global(slot);
+                    self.globals[slot] = self.stack[src].clone();
                 }
                 CALL => {
                     let dst = chunk.read() as usize;

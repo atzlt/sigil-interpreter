@@ -11,7 +11,6 @@ use crate::{
 
 // ── Precedence levels (low → high) ──
 
-const PREC_ASSIGN: u8 = 0;
 const PREC_TERNARY: u8 = 10;
 const PREC_OR: u8 = 20;
 const PREC_AND: u8 = 30;
@@ -126,7 +125,18 @@ impl<'a> Compiler<'a> {
     // ── Bytecode emission ──
 
     fn emit_identifier(&mut self, name: Spur) -> Result<u8> {
-        self.resolve_local(name)
+        if let Some(reg) = self.try_resolve_local(name) {
+            return Ok(reg);
+        }
+        let slot = self
+            .resolve_global(name)
+            .ok_or_else(|| CompileError::UndefinedVariable {
+                name: self.intern_resolve(&name).to_string(),
+                diag: (self.prev_span.clone(), "undefined variable".to_string()),
+            })?;
+        let reg = self.alloc_temp()?;
+        emit!(self.chunk, GETGLB, reg, wide slot);
+        Ok(reg)
     }
 
     fn emit_number(&mut self, n: f64) -> Result<u8> {
@@ -158,12 +168,6 @@ impl<'a> Compiler<'a> {
 
     fn emit_binary(&mut self, op: &Token, lhs: u8, rhs: u8) -> Result<u8> {
         match *op {
-            Token::Equals => {
-                emit!(self.chunk, MOVE, lhs, rhs);
-                self.regs.free_temp(lhs);
-                self.regs.free_temp(rhs);
-                Ok(lhs)
-            }
             _ => {
                 let method = binary_op_method(op);
                 let name_idx = self.chunk.add_constant(Value::String(method.into()));
@@ -255,7 +259,7 @@ fn binary_op_method(op: &Token) -> &'static str {
         Token::Star => "mul",
         Token::Slash => "div",
         Token::Percent => "mod",
-        Token::EqEq => "eq",
+        Token::Equal => "eq",
         Token::Neq => "neq",
         Token::Lt => "lt",
         Token::Le => "le",
@@ -270,11 +274,10 @@ fn binary_op_method(op: &Token) -> &'static str {
 
 fn infix_bp_assoc(tok: &Token) -> Option<(u8, Assoc)> {
     match tok {
-        Token::Equals => Some((PREC_ASSIGN, Assoc::Right)),
         Token::Quest => Some((PREC_TERNARY, Assoc::Right)),
         Token::Or => Some((PREC_OR, Assoc::Left)),
         Token::And => Some((PREC_AND, Assoc::Left)),
-        Token::EqEq | Token::Neq => Some((PREC_EQUALITY, Assoc::Left)),
+        Token::Equal | Token::Neq => Some((PREC_EQUALITY, Assoc::Left)),
         Token::Lt | Token::Le | Token::Gt | Token::Ge => Some((PREC_COMPARISON, Assoc::Left)),
         Token::Plus | Token::Minus => Some((PREC_TERM, Assoc::Left)),
         Token::Star | Token::Slash | Token::Percent => Some((PREC_FACTOR, Assoc::Left)),

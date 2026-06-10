@@ -1,3 +1,5 @@
+use lasso::Spur;
+
 use crate::{
     compiler::{
         compile::{CompileError, Compiler, Result},
@@ -23,6 +25,14 @@ impl<'a> Compiler<'a> {
             Token::LBrace => self.parse_block(),
             Token::If => self.parse_if(),
             Token::While => self.parse_while(),
+            Token::Identifier(id) => {
+                if self.peek()? == &Token::Assign {
+                    self.advance()?;
+                    self.parse_assign(id)
+                } else {
+                    self.parse_expr_stmt()
+                }
+            }
             _ => self.parse_expr_stmt(),
         }
     }
@@ -56,15 +66,42 @@ impl<'a> Compiler<'a> {
             });
         };
 
-        self.consume(&Token::Equals)?;
+        self.consume(&Token::Assign)?;
 
-        let held = self.alloc_held()?;
         let rhs = self.expression()?;
-        emit!(self.chunk, MOVE, held, rhs);
-        self.free_other_temps(held, &[rhs]);
-        self.add_local(name, held);
-        self.consume(&Token::Semicolon)?;
 
+        if self.is_top_level() {
+            let slot = self.declare_global(name);
+            self.regs.free_temp(rhs);
+            emit!(self.chunk, SETGLB, wide slot, rhs);
+        } else {
+            let held = self.alloc_held()?;
+            emit!(self.chunk, MOVE, held, rhs);
+            self.free_other_temps(held, &[rhs]);
+            self.add_local(name, held);
+        }
+
+        self.consume(&Token::Semicolon)?;
+        Ok(())
+    }
+
+    fn parse_assign(&mut self, id: Spur) -> Result<()> {
+        let span = self.prev_span.clone();
+        self.advance()?;
+        dbg!(self.current.0);
+        let reg = self.expression()?;
+        if let Some(local) = self.try_resolve_local(id) {
+            emit!(self.chunk, MOVE, local, reg);
+        } else if let Some(global) = self.resolve_global(id) {
+            emit!(self.chunk, SETGLB, wide global, reg);
+        } else {
+            return Err(CompileError::UndefinedVariable {
+                name: self.intern_resolve(&id).to_string(),
+                diag: (span, "undefined variable".to_string()),
+            });
+        }
+        self.regs.free_temp(reg);
+        self.consume(&Token::Semicolon)?;
         Ok(())
     }
 

@@ -110,6 +110,7 @@ fn test_while_missing_block() {
 #[test]
 fn test_assignment_to_undefined_var() {
     let err = compile_err(r"x = 1;");
+    dbg!(&err);
     assert!(matches!(err, CompileError::UndefinedVariable { .. }));
 }
 
