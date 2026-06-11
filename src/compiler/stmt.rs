@@ -18,6 +18,17 @@ enum JumpKind {
 
 impl<'a> Compiler<'a> {
     pub(super) fn statement(&mut self) -> Result<()> {
+        match self.statement_inner() {
+            Err(e) => {
+                self.record_error(e);
+                self.sync();
+                Ok(())
+            }
+            ok => ok,
+        }
+    }
+
+    fn statement_inner(&mut self) -> Result<()> {
         self.clear_temp();
         self.record_locus();
         match self.current() {

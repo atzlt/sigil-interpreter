@@ -1,0 +1,140 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug unit tests in library 'sigil_interpreter'",
+            "type": "lldb",
+            "request": "launch",
+            "cargo": {
+                "args": [
+                    "test"
+                ]
+            }
+        },
+        {
+            "name": "Debug executable 'sigil-interpreter'",
+            "type": "lldb",
+            "request": "launch",
+            "cargo": {
+                "args": [
+                    "run",
+                    "--bin=sigil-interpreter"
+                ]
+            },
+            "args": []
+        },
+        {
+            "name": "Debug unit tests in executable 'sigil-interpreter'",
+            "type": "lldb",
+            "request": "launch",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--bin=sigil-interpreter"
+                ]
+            }
+        },
+        {
+            "name": "Debug integration test 'expr_error_tests'",
+            "type": "lldb",
+            "request": "launch",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--test=expr_error_tests"
+                ]
+            }
+        },
+        {
+            "name": "Debug integration test 'expr_tests'",
+            "type": "lldb",
+            "request": "launch",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--test=expr_tests"
+                ]
+            }
+        },
+        {
+            "name": "Debug integration test 'function_tests'",
+            "type": "lldb",
+            "request": "launch",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--test=function_tests"
+                ]
+            }
+        },
+        {
+            "name": "Debug integration test 'modifier_tests'",
+            "type": "lldb",
+            "request": "launch",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--test=modifier_tests"
+                ]
+            }
+        },
+        {
+            "name": "Debug integration test 'stmt_error_tests'",
+            "type": "lldb",
+            "request": "launch",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--test=stmt_error_tests"
+                ]
+            }
+        },
+        {
+            "name": "Debug integration test 'stmt_tests'",
+            "type": "lldb",
+            "request": "launch",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--test=stmt_tests"
+                ]
+            }
+        },
+        {
+            "name": "Debug integration test 'vm_tests'",
+            "type": "lldb",
+            "request": "launch",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--test=vm_tests"
+                ]
+            }
+        },
+        {
+            "name": "Debug benchmark 'flamegraph_bench'",
+            "type": "lldb",
+            "request": "launch",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--bench=flamegraph_bench"
+                ]
+            }
+        },
+        {
+            "name": "Debug benchmark 'simple_bench'",
+            "type": "lldb",
+            "request": "launch",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--bench=simple_bench"
+                ]
+            }
+        }
+    ]
+}

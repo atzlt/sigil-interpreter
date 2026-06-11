@@ -8,58 +8,77 @@ use sigil_interpreter::{
 };
 
 fn report_compile_error(source: &str, err: &CompileError) {
-    let src = Source::from(source);
-
     match err {
-        CompileError::Unexpected {
-            diag: (span, msg), ..
-        } => {
-            Report::build(ReportKind::Error, span.clone())
-                .with_message("unexpected token")
-                .with_label(Label::new(span.clone()).with_message(msg))
-                .finish()
-                .eprint(&src)
-                .unwrap();
+        CompileError::Multiple(errors) => {
+            for e in errors {
+                report_compile_error(source, e);
+            }
         }
-        CompileError::Unclosed {
-            open: (open_span, open_msg),
-            close: (close_span, close_msg),
-        } => {
-            Report::build(ReportKind::Error, close_span.clone())
-                .with_message("unclosed delimiter")
-                .with_label(Label::new(open_span.clone()).with_message(open_msg))
-                .with_label(Label::new(close_span.clone()).with_message(close_msg))
-                .finish()
-                .eprint(&src)
-                .unwrap();
+        _ => {
+            let src = Source::from(source);
+            match err {
+                CompileError::Unexpected {
+                    diag: (span, msg), ..
+                } => {
+                    Report::build(ReportKind::Error, span.clone())
+                        .with_message("unexpected token")
+                        .with_label(Label::new(span.clone()).with_message(msg))
+                        .finish()
+                        .eprint(&src)
+                        .unwrap();
+                }
+                CompileError::Unclosed {
+                    open: (open_span, open_msg),
+                    close: (close_span, close_msg),
+                } => {
+                    Report::build(ReportKind::Error, close_span.clone())
+                        .with_message("unclosed delimiter")
+                        .with_label(Label::new(open_span.clone()).with_message(open_msg))
+                        .with_label(Label::new(close_span.clone()).with_message(close_msg))
+                        .finish()
+                        .eprint(&src)
+                        .unwrap();
+                }
+                CompileError::Unrecognized((span, msg)) => {
+                    Report::build(ReportKind::Error, span.clone())
+                        .with_message("unrecognized token")
+                        .with_label(Label::new(span.clone()).with_message(msg))
+                        .finish()
+                        .eprint(&src)
+                        .unwrap();
+                }
+                CompileError::RegisterOverflow((span, msg)) => {
+                    Report::build(ReportKind::Error, span.clone())
+                        .with_message("register overflow")
+                        .with_label(Label::new(span.clone()).with_message(msg))
+                        .finish()
+                        .eprint(&src)
+                        .unwrap();
+                }
+                CompileError::UndefinedVariable {
+                    diag: (span, msg), ..
+                } => {
+                    Report::build(ReportKind::Error, span.clone())
+                        .with_message("undefined variable")
+                        .with_label(Label::new(span.clone()).with_message(msg))
+                        .finish()
+                        .eprint(&src)
+                        .unwrap();
+                }
+                CompileError::UndefinedFunction {
+                    name: fn_name,
+                    diag: (span, msg),
+                } => {
+                    Report::build(ReportKind::Error, span.clone())
+                        .with_message(format!("undefined function: {fn_name}"))
+                        .with_label(Label::new(span.clone()).with_message(msg))
+                        .finish()
+                        .eprint(&src)
+                        .unwrap();
+                }
+                _ => {}
+            }
         }
-        CompileError::Unrecognized((span, msg)) => {
-            Report::build(ReportKind::Error, span.clone())
-                .with_message("unrecognized token")
-                .with_label(Label::new(span.clone()).with_message(msg))
-                .finish()
-                .eprint(&src)
-                .unwrap();
-        }
-        CompileError::RegisterOverflow((span, msg)) => {
-            Report::build(ReportKind::Error, span.clone())
-                .with_message("register overflow")
-                .with_label(Label::new(span.clone()).with_message(msg))
-                .finish()
-                .eprint(&src)
-                .unwrap();
-        }
-        CompileError::UndefinedVariable {
-            diag: (span, msg), ..
-        } => {
-            Report::build(ReportKind::Error, span.clone())
-                .with_message("undefined variable")
-                .with_label(Label::new(span.clone()).with_message(msg))
-                .finish()
-                .eprint(&src)
-                .unwrap();
-        }
-        _ => todo!(),
     }
 }
 

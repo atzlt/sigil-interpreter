@@ -135,6 +135,8 @@ pub enum CompileError {
     UndefinedVariable { name: String, diag: SpanInfo },
     #[error("undefined function: {name}")]
     UndefinedFunction { name: String, diag: SpanInfo },
+    #[error("{count} compile errors", count = .0.len())]
+    Multiple(Vec<CompileError>),
 }
 
 pub type Result<T> = std::result::Result<T, CompileError>;
@@ -146,6 +148,7 @@ pub struct Compiler<'a> {
     pub(super) globals: GlobalStore,
     pub(super) funcs: FunctionRegistry,
     frames: Vec<CompilerFrame>,
+    errors: Vec<CompileError>,
 }
 
 pub(super) fn new_compiler(source: &str, funcs: FunctionRegistry) -> Compiler<'_> {
@@ -156,6 +159,7 @@ pub(super) fn new_compiler(source: &str, funcs: FunctionRegistry) -> Compiler<'_
         globals: GlobalStore::default(),
         funcs,
         frames: vec![CompilerFrame::new(0, &[])],
+        errors: Vec::new(),
     }
 }
 
@@ -175,7 +179,12 @@ pub(super) fn compile(
         }
         c.emit_safety_net()?;
     }
-    Ok(c.take_compiled())
+    let errors = c.take_errors();
+    if errors.is_empty() {
+        Ok(c.take_compiled())
+    } else {
+        Err(CompileError::Multiple(errors))
+    }
 }
 
 // ── Token handling ──
@@ -246,6 +255,39 @@ impl Compiler<'_> {
                 ),
             })
         }
+    }
+    pub(super) fn sync(&mut self) {
+        loop {
+            match self.current() {
+                Token::Semicolon
+                | Token::RBrace
+                | Token::Eof
+                | Token::Let
+                | Token::Fn
+                | Token::If
+                | Token::While
+                | Token::Return
+                | Token::Break
+                | Token::Continue
+                | Token::At => {
+                    self.advance().unwrap();
+                    break;
+                }
+                _ => {
+                    if self.advance().is_err() {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    pub(super) fn record_error(&mut self, err: CompileError) {
+        self.errors.push(err);
+    }
+
+    pub(super) fn take_errors(&mut self) -> Vec<CompileError> {
+        std::mem::take(&mut self.errors)
     }
 }
 
