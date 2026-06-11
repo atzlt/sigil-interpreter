@@ -52,6 +52,19 @@ fn bench_fibonacci_iter(c: &mut Criterion) {
     });
 }
 
+fn bench_fibonacci_recursion(c: &mut Criterion) {
+    let source = r"
+        fn fib(n) {
+            if n < 2 { return n; }
+            return fib(n - 1) + fib(n - 2);
+        }
+        return fib(20);
+    ";
+    c.bench_function("fibonacci/recur_20", |b| {
+        b.iter(|| compile_and_run(black_box(source)))
+    });
+}
+
 fn bench_if_else_chain(c: &mut Criterion) {
     let mut parts = Vec::new();
     for i in 0..100 {
@@ -72,6 +85,7 @@ criterion_group!(
     bench_expr_long_chain,
     bench_while_counting,
     bench_fibonacci_iter,
+    bench_fibonacci_recursion,
     bench_if_else_chain,
 );
 criterion_main!(benches);

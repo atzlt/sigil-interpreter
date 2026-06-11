@@ -3,7 +3,7 @@
 use sigil_interpreter::{
     compiler::compile::{CompileError, compile_expr, compile_program},
     value::Value,
-    vm::{Chunk, VM},
+    vm::{Chunk, VM, exec::RuntimeError},
 };
 
 fn print_chunks(chunks: &[Chunk]) {
@@ -19,6 +19,13 @@ pub fn run_program(source: &str) -> Value {
     print_chunks(&compiled.0);
     let mut vm = VM::default();
     vm.run(&compiled.0, &compiled.1).unwrap()
+}
+
+pub fn run_program_err(source: &str) -> RuntimeError {
+    let compiled = compile_program(source).unwrap();
+    print_chunks(&compiled.0);
+    let mut vm = VM::default();
+    vm.run(&compiled.0, &compiled.1).unwrap_err()
 }
 
 pub fn run_expr(source: &str) -> Value {

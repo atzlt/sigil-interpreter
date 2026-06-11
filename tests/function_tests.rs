@@ -1,7 +1,9 @@
 mod common;
 
 use common::run_program;
-use sigil_interpreter::value::Value;
+use sigil_interpreter::{value::Value, vm::exec::RuntimeError};
+
+use crate::common::run_program_err;
 
 // ── basic function declaration & call ──
 
@@ -182,4 +184,9 @@ fn test_fn_while_sum() {
 #[test]
 fn test_fn_empty_return() {
     assert_eq!(run_program(r"fn f() { return; } return f();"), Value::Nil);
+}
+
+#[test]
+fn test_fn_overflow() {
+    assert!(matches!(run_program_err(r"fn f() { return f(); } return f();"), RuntimeError::StackOverflow { .. }));
 }
