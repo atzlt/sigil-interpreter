@@ -124,23 +124,25 @@ fn test_fn_multiple() {
     );
 }
 
-// #[test]
-// fn test_fn_mutual_call() {
-//     assert_eq!(
-//         run_program(
-//             r"fn is_even(n) {
-//                 if n == 0 { return 1; }
-//                 return is_odd(n - 1);
-//             }
-//             fn is_odd(n) {
-//                 if n == 0 { return 0; }
-//                 return is_even(n - 1);
-//             }
-//             return is_even(8);"
-//         ),
-//         Value::Number(1.0)
-//     );
-// }
+#[test]
+fn test_fn_mutual_call() {
+    assert_eq!(
+        run_program(
+            r"
+            fn is_odd() {}
+            fn is_even(n) {
+                if n == 0 { return 1; }
+                return is_odd(n - 1);
+            }
+            fn is_odd(n) {
+                if n == 0 { return 0; }
+                return is_even(n - 1);
+            }
+            return is_even(8);"
+        ),
+        Value::Number(1.0)
+    );
+}
 
 #[test]
 fn test_fn_early_return() {
