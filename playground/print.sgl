@@ -1,4 +1,7 @@
 @intrinsic
 fn print(x);
 
-print(print);
+@lang_item(sub)
+fn sub(x, y) { return x + y; }
+
+print(1 - 2);

@@ -177,13 +177,13 @@ impl<'a> Compiler<'a> {
         };
         if self.spur_eq(spur, "intrinsic") {
             Ok(FnModifier::Intrinsic)
-        } else if self.spur_eq(spur, "lang-item") {
+        } else if self.spur_eq(spur, "lang_item") {
             self.consume(&Token::LParen).map_err(|_| {
                 CompileError::Unexpected {
                     token: self.current(),
                     diag: (
                         self.current_span().clone(),
-                        "expected '(' after @lang-item".to_string(),
+                        "expected '(' after @lang_item".to_string(),
                     ),
                 }
             })?;
