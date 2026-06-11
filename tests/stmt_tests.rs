@@ -379,3 +379,13 @@ fn test_continue_nested_inner() {
         Value::Number(100.0)
     );
 }
+
+#[test]
+fn test_fn_decl() {
+    assert_eq!(
+        run_program(
+            r"fn add(x, y, z) { return x + y + z; } return 0;"
+        ),
+        Value::Number(0.0)
+    );
+}

@@ -1,8 +1,6 @@
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
-use crate::functions::FnLookupKey;
-
 #[derive(Debug, Clone, Default)]
 pub enum Value {
     #[default]

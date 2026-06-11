@@ -109,7 +109,11 @@ impl<'a> Compiler<'a> {
         self.parse_block()?;
         self.exit_frame()?;
 
-        self.funcs.register(FnLookupKey::Name(name), chunk_idx);
+        if self.is_top_level() {
+            self.funcs.register(FnLookupKey::Name(name), chunk_idx);
+        } else {
+            unimplemented!("Nested function declaration is not supported yet")
+        }
 
         Ok(())
     }
