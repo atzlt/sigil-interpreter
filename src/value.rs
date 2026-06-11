@@ -1,7 +1,7 @@
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
-use crate::functions::FnId;
+use crate::functions::FnLookupKey;
 
 #[derive(Debug, Clone, Default)]
 pub enum Value {
@@ -10,7 +10,7 @@ pub enum Value {
     Bool(bool),
     Number(f64),
     String(String),
-    Fn(FnId),
+    Fn(usize),
 }
 
 impl PartialEq for Value {
@@ -67,7 +67,7 @@ impl fmt::Display for Value {
             Value::Bool(b) => write!(f, "{b}"),
             Value::Number(n) => write!(f, "{n}"),
             Value::String(s) => write!(f, "{s}"),
-            Value::Fn(fun) => write!(f, "{fun}"),
+            Value::Fn(fun) => write!(f, "ƒ_{fun:?}"),
         }
     }
 }

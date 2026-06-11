@@ -59,6 +59,7 @@ fn report_compile_error(source: &str, err: &CompileError) {
                 .eprint(&src)
                 .unwrap();
         }
+        _ => todo!()
     }
 }
 

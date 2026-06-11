@@ -6,7 +6,10 @@ use crate::{
         lexer::Token,
     },
     emit, emit_args,
+    functions::FnLookupKey,
 };
+
+type Identifier = Spur;
 
 enum JumpKind {
     Break,
@@ -19,6 +22,7 @@ impl<'a> Compiler<'a> {
         self.record_locus();
         match self.current() {
             Token::Let => self.parse_let_decl(),
+            Token::Fn => self.parse_fn_decl(),
             Token::Return => self.parse_return_stmt(),
             Token::Break => self.parse_jump(JumpKind::Break),
             Token::Continue => self.parse_jump(JumpKind::Continue),
@@ -85,7 +89,32 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn parse_assign(&mut self, id: Spur) -> Result<()> {
+    fn parse_fn_decl(&mut self) -> Result<()> {
+        self.consume(&Token::Fn)?;
+        let name = if let Token::Identifier(spur) = self.current() {
+            let name = spur;
+            self.advance()?;
+            name
+        } else {
+            return Err(CompileError::Unexpected {
+                token: self.current(),
+                diag: (
+                    self.current_span().clone(),
+                    format!("expected identifier, found {}", self.current()),
+                ),
+            });
+        };
+        let args = self.parse_arglist()?;
+        let chunk_idx = self.new_frame(&args);
+        self.parse_block()?;
+        self.exit_frame()?;
+
+        self.funcs.register(FnLookupKey::Name(name), chunk_idx);
+
+        Ok(())
+    }
+
+    fn parse_assign(&mut self, id: Identifier) -> Result<()> {
         let span = self.prev_span().clone();
         self.advance()?;
         if let Some(local) = self.try_resolve_local(id) {
@@ -211,5 +240,35 @@ impl<'a> Compiler<'a> {
 
         self.patch_if(test_ip, while_end);
         Ok(())
+    }
+}
+
+impl Compiler<'_> {
+    fn parse_arglist(&mut self) -> Result<Vec<Identifier>> {
+        self.consume(&Token::LParen)
+            .map_err(|_| CompileError::Unexpected {
+                token: self.current(),
+                diag: (
+                    self.current_span().clone(),
+                    "expect argument list".to_string(),
+                ),
+            })?;
+        let mut args = Vec::new();
+        while let Token::Identifier(id) = self.current() {
+            args.push(id);
+            self.advance()?;
+            if !self.matches(&Token::Comma)? {
+                break;
+            }
+        }
+        self.consume(&Token::RParen)
+            .map_err(|_| CompileError::Unexpected {
+                token: self.current(),
+                diag: (
+                    self.current_span().clone(),
+                    "expect argument list to close".to_string(),
+                ),
+            })?;
+        Ok(args)
     }
 }

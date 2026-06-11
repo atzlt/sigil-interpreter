@@ -3,7 +3,7 @@ use ahash::AHashMap;
 use lasso::Spur;
 
 #[derive(Debug, Default)]
-struct GlobalStore {
+pub(super) struct GlobalStore {
     slots: AHashMap<Spur, u16>,
     ptr: u16,
 }
@@ -32,12 +32,27 @@ struct Local {
 }
 
 #[derive(Debug, Default)]
-struct LocalsTracker {
+pub(super) struct LocalsTracker {
     locals: Vec<Local>,
     current_depth: usize,
 }
 
 impl LocalsTracker {
+    pub fn new_with(args: &[Spur]) -> Self {
+        Self {
+            locals: args
+                .iter()
+                .enumerate()
+                .map(|(i, a)| Local {
+                    id: *a,
+                    reg: i as u8,
+                    depth: 0,
+                })
+                .collect(),
+            current_depth: 0,
+        }
+    }
+
     pub fn is_top_level(&self) -> bool {
         self.current_depth == 0
     }
@@ -87,39 +102,33 @@ impl LocalsTracker {
     }
 }
 
-#[derive(Debug, Default)]
-pub struct Variables {
-    globals: GlobalStore,
-    locals: LocalsTracker,
-}
-
 impl<'a> Compiler<'a> {
     pub(super) fn declare_global(&mut self, id: Spur) -> u16 {
-        self.frame_mut().vars.globals.declare(id)
+        self.globals.declare(id)
     }
 
     pub(super) fn resolve_global(&self, id: Spur) -> Option<u16> {
-        self.frame().vars.globals.resolve(id)
+        self.globals.resolve(id)
     }
 
     pub(super) fn add_local(&mut self, id: Spur, reg: u8) {
-        self.frame_mut().vars.locals.add_local(id, reg);
+        self.frame_mut().locals.add_local(id, reg);
     }
 
     pub(super) fn try_resolve_local(&mut self, id: Spur) -> Option<u8> {
-        self.frame_mut().vars.locals.resolve_local(id)
+        self.frame_mut().locals.resolve_local(id)
     }
 
     pub(super) fn is_top_level(&self) -> bool {
-        self.frame().vars.locals.is_top_level()
+        self.frame().locals.is_top_level()
     }
 
     pub(super) fn enter_scope(&mut self) {
-        self.frame_mut().vars.locals.enter_scope();
+        self.frame_mut().locals.enter_scope();
     }
 
     pub(super) fn exit_scope(&mut self) {
-        let freed = self.frame_mut().vars.locals.exit_scope();
+        let freed = self.frame_mut().locals.exit_scope();
         self.frame_mut().regs.free_held(&freed);
     }
 }

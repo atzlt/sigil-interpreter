@@ -4,7 +4,7 @@ use smallvec::SmallVec;
 use thiserror::Error;
 
 use crate::{
-    functions::{FnType, FunctionRegistry},
+    functions::{FnEntry, FunctionRegistry},
     value::Value,
     vm::{Chunk, OpCode, frame::Frames},
 };
@@ -92,6 +92,11 @@ impl VM {
                     let dst = chunk!().read() as usize;
                     self.stack_mut()[dst] = Value::Nil;
                 }
+                LOADFUN => {
+                    let dst = chunk!().read() as usize;
+                    let fun = chunk!().read_wide() as usize;
+                    self.stack_mut()[dst] = Value::Fn(fun);
+                }
                 GETGLB => {
                     let dst = chunk!().read() as usize;
                     let slot = chunk!().read_wide() as usize;
@@ -105,14 +110,14 @@ impl VM {
                     self.globals[slot] = self.stack()[src].clone();
                 }
                 CALL => {
-                    let dst = chunk!().read() as usize;
-                    let name_idx = chunk!().read_wide() as usize;
+                    let dst: usize = chunk!().read() as usize;
+                    let reg = chunk!().read() as usize;
                     let offset = chunk!().read() as usize;
                     let argc = chunk!().read() as usize;
 
-                    let name = chunk!().constants.get(name_idx as u16);
-                    let fn_id = match name {
-                        Value::Fn(f) => f,
+                    let reg = &self.stack()[reg];
+                    let fn_id = match reg {
+                        Value::Fn(f) => *f,
                         _ => {
                             return Err(RuntimeError::UndefinedFunction {
                                 name: "this variable is not callable".into(),
@@ -120,37 +125,16 @@ impl VM {
                             });
                         }
                     };
-                    let func = self.registry.get(fn_id).ok_or_else(|| {
-                        RuntimeError::UndefinedFunction {
-                            name: format!("{fn_id}"),
-                            span: locus_span(&chunk!()),
-                        }
-                    })?;
+    
+                    self.handle_call(chunk, fn_id, argc, dst, offset)?;
+                }
+                CALLK => {
+                    let dst: usize = chunk!().read() as usize;
+                    let fn_id = chunk!().read_wide() as usize;
+                    let offset = chunk!().read() as usize;
+                    let argc = chunk!().read() as usize;
 
-                    match func {
-                        FnType::Intrinsic(func) => {
-                            let window = &self.stack();
-                            let mut args: SmallVec<[_; 8]> = SmallVec::with_capacity(argc);
-                            for _ in 0..argc {
-                                let val_ref = &window[chunk!().read() as usize];
-                                args.push(val_ref);
-                            }
-
-                            let result = func(&args);
-                            drop(args);
-                            self.stack_mut()[dst] = result;
-                        }
-                        FnType::Chunk(chunk_idx) => {
-                            let chunk_idx = *chunk_idx;
-                            for i in 1..=argc {
-                                let window = &self.stack();
-                                self.stack_mut()[offset + i] =
-                                    window[chunk!().read() as usize].clone();
-                            }
-                            self.enter_frame(chunk_idx, dst, offset);
-                            unimplemented!("Bytecode function compilation not supported")
-                        }
-                    }
+                    self.handle_call(chunk, fn_id, argc, dst, offset)?;
                 }
                 RETURN => {
                     let reg = chunk!().read() as usize;
@@ -194,5 +178,51 @@ impl VM {
                 }
             }
         }
+    }
+
+    fn handle_call(
+        &mut self,
+        chunk: &mut [Chunk],
+        fn_id: usize,
+        argc: usize,
+        dst: usize,
+        offset: usize,
+    ) -> Result<(), RuntimeError> {
+        macro_rules! chunk {
+            () => {
+                chunk[self.chunk_idx()]
+            };
+        }
+        let func = self
+            .registry
+            .get(&fn_id)
+            .ok_or_else(|| RuntimeError::UndefinedFunction {
+                name: format!("{fn_id}"),
+                span: locus_span(&chunk!()),
+            })?;
+
+        match func {
+            FnEntry::Intrinsic(func) => {
+                let window = &self.stack();
+                let mut args: SmallVec<[_; 8]> = SmallVec::with_capacity(argc);
+                for _ in 0..argc {
+                    let val_ref = &window[chunk!().read() as usize];
+                    args.push(val_ref);
+                }
+
+                let result = func(&args);
+                drop(args);
+                self.stack_mut()[dst] = result;
+            }
+            FnEntry::ChunkIdx(chunk_idx) => {
+                let chunk_idx = *chunk_idx;
+                for i in 1..=argc {
+                    let window = &self.stack();
+                    self.stack_mut()[offset + i] = window[chunk!().read() as usize].clone();
+                }
+                self.enter_frame(chunk_idx, dst, offset);
+            }
+        }
+        Ok(())
     }
 }

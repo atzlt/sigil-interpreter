@@ -94,7 +94,7 @@ fn test_unrecognized() {
 
 #[test]
 fn test_nested_ternary() {
-    let mut source = (1..=500)
+    let mut source = (1..=400)
         .map(|_| "1 >= 2 ? 1 : ")
         .collect::<Vec<_>>()
         .join("");

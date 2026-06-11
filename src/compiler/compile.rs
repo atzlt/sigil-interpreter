@@ -6,8 +6,12 @@ use thiserror::Error;
 
 use crate::{
     compiler::{
-        lexer::Token, loop_tracker::LoopTracker, register::RegisterTracker, variables::Variables,
+        lexer::Token,
+        loop_tracker::LoopTracker,
+        register::RegisterTracker,
+        variables::{GlobalStore, LocalsTracker},
     },
+    functions::{FnLookupKey, FunctionRegistry},
     vm::Chunk,
 };
 
@@ -124,8 +128,12 @@ pub enum CompileError {
     Unrecognized(SpanInfo),
     #[error("register overflow")]
     RegisterOverflow(SpanInfo),
+    #[error("exiting top-level call frame")]
+    ExitTopFrame(SpanInfo),
     #[error("undefined variable: {name}")]
     UndefinedVariable { name: String, diag: SpanInfo },
+    #[error("undefined function: {name}")]
+    UndefinedFunction{ name: String, diag: SpanInfo },
 }
 
 pub type Result<T> = std::result::Result<T, CompileError>;
@@ -134,8 +142,9 @@ pub struct Compiler<'a> {
     lexer: logos::SpannedIter<'a, Token>,
     pub(super) chunks: Vec<Chunk>,
     pub(super) tokens: TokenCursor,
+    pub(super) globals: GlobalStore,
+    pub(super) funcs: FunctionRegistry,
     frames: Vec<CompilerFrame>,
-    frame_ptr: usize,
 }
 
 fn new_compiler(source: &str) -> Compiler<'_> {
@@ -143,8 +152,9 @@ fn new_compiler(source: &str) -> Compiler<'_> {
         lexer: Token::lexer(source).spanned(),
         chunks: vec![Chunk::new()],
         tokens: TokenCursor::new(),
-        frames: vec![CompilerFrame::new(0)],
-        frame_ptr: 0,
+        globals: GlobalStore::default(),
+        funcs: FunctionRegistry::with_std(), // TODO: This is a temporary solution. Will be replaced by `@intrinsic` and `@lang-item`s.
+        frames: vec![CompilerFrame::new(0, &[])],
     }
 }
 
@@ -185,15 +195,15 @@ impl Compiler<'_> {
         self.tokens.check(token)
     }
 
-    pub(super) fn current(&mut self) -> Token {
+    pub(super) fn current(&self) -> Token {
         *self.tokens.token()
     }
 
-    pub(super) fn current_span(&mut self) -> &Span {
+    pub(super) fn current_span(&self) -> &Span {
         self.tokens.span()
     }
 
-    pub(super) fn prev_span(&mut self) -> &Span {
+    pub(super) fn prev_span(&self) -> &Span {
         self.tokens.prev_span()
     }
 
@@ -250,20 +260,26 @@ impl Compiler<'_> {
     }
 
     pub(super) fn frame_mut(&mut self) -> &mut CompilerFrame {
-        &mut self.frames[self.frame_ptr]
+        let len = self.frames.len() - 1;
+        &mut self.frames[len]
     }
 
     pub(super) fn frame(&self) -> &CompilerFrame {
-        &self.frames[self.frame_ptr]
+        let len = self.frames.len() - 1;
+        &self.frames[len]
     }
 
     pub(super) fn chunk_mut(&mut self) -> &mut Chunk {
-        let id = self.frame().chunk_id;
+        let id = self.frame().chunk_idx;
         &mut self.chunks[id]
     }
 
     pub(super) fn chunk(&self) -> &Chunk {
-        &self.chunks[self.frame().chunk_id]
+        &self.chunks[self.frame().chunk_idx]
+    }
+
+    pub(super) fn resolve_fn(&self, name: &FnLookupKey) -> Option<&usize> {
+        self.funcs.get_id(name)
     }
 
     pub(super) fn emit_move(&mut self, dst: u8, src: u8) {
@@ -272,9 +288,9 @@ impl Compiler<'_> {
         }
     }
 
-    pub(super) fn emit_call(&mut self, dst: u8, fn_slot: u16, frame_offset: u8, args: &[u8]) {
+    pub(super) fn emit_call_const(&mut self, dst: u8, fn_slot: usize, frame_offset: u8, args: &[u8]) {
         let argc = args.len();
-        emit!(self.chunk_mut(), CALL, dst, wide fn_slot, frame_offset, argc);
+        emit!(self.chunk_mut(), CALLK, dst, wide fn_slot as u16, frame_offset, argc);
         self.chunk_mut().append(args);
     }
 
@@ -312,6 +328,26 @@ impl Compiler<'_> {
         self.chunk_mut()
             .patch_wide(test_ip + 2, (else_start - test_ip) as u16);
     }
+
+    /// Returns the chunk index.
+    pub(super) fn new_frame(&mut self, args: &[Spur]) -> usize {
+        self.chunks.push(Chunk::new());
+        let chunk_idx = self.chunks.len() - 1;
+        let frame = CompilerFrame::new(chunk_idx, args);
+        self.frames.push(frame);
+        chunk_idx
+    }
+
+    pub(super) fn exit_frame(&mut self) -> Result<()> {
+        if self.frames.len() == 1 {
+            return Err(CompileError::ExitTopFrame((
+                self.current_span().clone(),
+                "exiting from top-level call frame here".to_string(),
+            )));
+        }
+        self.frames.pop();
+        Ok(())
+    }
 }
 
 // Compiler Frames
@@ -319,18 +355,18 @@ impl Compiler<'_> {
 #[derive(Debug, Default)]
 pub(super) struct CompilerFrame {
     pub(super) regs: RegisterTracker,
-    pub(super) vars: Variables,
+    pub(super) locals: LocalsTracker,
     pub(super) loops: LoopTracker,
-    chunk_id: usize,
+    chunk_idx: usize,
 }
 
 impl CompilerFrame {
-    fn new(chunk_id: usize) -> Self {
+    fn new(chunk_idx: usize, args: &[Spur]) -> Self {
         Self {
             regs: RegisterTracker::new(256),
-            vars: Variables::default(),
+            locals: LocalsTracker::new_with(args),
             loops: LoopTracker::new(),
-            chunk_id,
+            chunk_idx,
         }
     }
 }

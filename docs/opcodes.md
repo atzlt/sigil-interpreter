@@ -37,41 +37,47 @@ Variable-length encoding. All multi-byte values are little-endian.
 
 ## Data Movement
 
-### MOVE `0x00`
+### MOVE
 ```
 [ op ][ dst ][ src ]
 ```
 `stack[dst] = stack[src]`
 
-### LOADK `0x01`
+### LOADK
 ```
 [ op ][ dst ][  wide const  ]
 ```
 `stack[dst] = constants[const]`
 
-### LOADBOOL `0x02`
+### LOADBOOL
 ```
 [ op ][ dst ][ val ]
 ```
 `stack[dst] = val != 0`
 
-### LOADNIL `0x03`
+### LOADNIL
 ```
 [ op ][ dst ]
 ```
 `stack[dst] = nil`
 
+### LOADFUN
+```
+[ op ][  wide fn_id  ]
+```
+`stack[dst] = fn(fn_id)`
+
 ---
 
 ## Global Variables
 
-### GETGLB `0x04`
+### GETGLB
 ```
 [ op ][ dst ][  wide slot  ]
 ```
 Loads `globals[slot]` into `stack[dst]`. Uninitialized → nil.
 
-### SETGLB `0x05`
+### SETGLB
 ```
 [ op ][  wide slot  ][ src ]
 ```
@@ -81,29 +87,35 @@ Stores `stack[src]` into `globals[slot]`. Auto-grows the global vector on first 
 
 ## Calls
 
-### CALL `0x06`
+### CALL
 ```
-[ op ][ dst ][  wide fn  ][offset][ argc ][ arg0 ]...[ argN ]
+[ op ][ dst ][ reg ][offset][ argc ][ arg0 ]...[ argN ]
 ```
-Looks up `constants[fn]` as `Value::Fn(FnId)` in the function registry. Set a new call frame starting at `offset + 1` of the current frame. Result → `stack[dst]`.
+Call function stored at `reg`. Set a new call frame starting at `offset + 1` of the current frame. Result → `stack[dst]`.
+
+### CALLK
+```
+[ op ][ dst ][  wide id  ][offset][ argc ][ arg0 ]...[ argN ]
+```
+Call function `id`. Set a new call frame starting at `offset + 1` of the current frame. Result → `stack[dst]`.
 
 ---
 
 ## Control Flow
 
-### RETURN `0x08`
+### RETURN
 ```
 [ op ][ reg ]
 ```
 Halts and returns `stack[reg]`.
 
-### JMP `0x09`
+### JMP
 ```
 [ op ][  wide offset  ]
 ```
 Unconditional jump: `ip += offset` (relative to the JMP opcode byte).
 
-### TEST `0x0A`
+### TEST
 ```
 [ op ][ reg ][  wide offset  ]
 ```
@@ -113,13 +125,13 @@ Conditional jump: if `!stack[reg].is_truthy()` then `ip += offset`.
 
 ## Structures *(unimplemented)*
 
-### CLOSURE `0x0B`
+### CLOSURE
 ```
 [ op ][ dst ][  wide proto  ]
 ```
 Creates closure from `constants[proto]` → `stack[dst]`.
 
-### NEWSTRUCT `0x0C`
+### NEWSTRUCT
 ```
 [ op ][ dst ]
 ```

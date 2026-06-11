@@ -1,4 +1,5 @@
 use ahash::AHashMap;
+use lasso::Spur;
 use strum_macros::{Display, FromRepr};
 
 use crate::value::Value;
@@ -24,39 +25,55 @@ pub enum LangItem {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display)]
-pub enum FnId {
+pub enum FnLookupKey {
     #[strum(to_string = "lang-item({0})")]
     LangItem(LangItem),
+    #[strum(to_string = "ƒ_{0:?}")]
+    Name(Spur),
 }
 
 #[derive(Debug)]
-pub enum FnType {
+pub enum FnEntry {
     Intrinsic(IntrinsicFn),
-    Chunk(usize),
+    ChunkIdx(usize),
 }
 
 #[derive(Debug, Default)]
 pub struct FunctionRegistry {
-    entries: AHashMap<FnId, FnType>,
+    keys: AHashMap<FnLookupKey, usize>,
+    entries: Vec<FnEntry>,
 }
 
 impl FunctionRegistry {
     pub fn new() -> Self {
         FunctionRegistry {
-            entries: AHashMap::new(),
+            keys: AHashMap::new(),
+            entries: Vec::new(),
         }
     }
 
-    pub fn register(&mut self, name: FnId, func: IntrinsicFn) {
-        self.entries.insert(name, FnType::Intrinsic(func));
+    pub fn register_intrinsic(&mut self, name: FnLookupKey, func: IntrinsicFn) {
+        self.entries.push(FnEntry::Intrinsic(func));
+        let id = self.entries.len() - 1;
+        self.keys.insert(name, id);
     }
 
-    pub fn get(&self, name: &FnId) -> Option<&FnType> {
-        self.entries.get(name)
+    pub fn register(&mut self, name: FnLookupKey, idx: usize) {
+        self.entries.push(FnEntry::ChunkIdx(idx));
+        let id = self.entries.len() - 1;
+        self.keys.insert(name, id);
+    }
+
+    pub fn get_id(&self, name: &FnLookupKey) -> Option<&usize> {
+        self.keys.get(name)
+    }
+
+    pub fn get(&self, id: &usize) -> Option<&FnEntry> {
+        self.entries.get(*id)
     }
 
     pub fn with_std() -> Self {
-        use self::FnId::LangItem;
+        use self::FnLookupKey::LangItem;
         use self::LangItem::*;
         let mut reg = Self::new();
 
@@ -118,19 +135,19 @@ impl FunctionRegistry {
             Value::Bool(a >= b)
         }
 
-        reg.register(LangItem(Add), add);
-        reg.register(LangItem(Sub), sub);
-        reg.register(LangItem(Mul), mul);
-        reg.register(LangItem(Div), div);
-        reg.register(LangItem(Rem), rem);
-        reg.register(LangItem(Neg), neg);
-        reg.register(LangItem(Not), not);
-        reg.register(LangItem(Eq), eq);
-        reg.register(LangItem(Neq), neq);
-        reg.register(LangItem(Lt), lt);
-        reg.register(LangItem(Le), le);
-        reg.register(LangItem(Gt), gt);
-        reg.register(LangItem(Ge), ge);
+        reg.register_intrinsic(LangItem(Add), add);
+        reg.register_intrinsic(LangItem(Sub), sub);
+        reg.register_intrinsic(LangItem(Mul), mul);
+        reg.register_intrinsic(LangItem(Div), div);
+        reg.register_intrinsic(LangItem(Rem), rem);
+        reg.register_intrinsic(LangItem(Neg), neg);
+        reg.register_intrinsic(LangItem(Not), not);
+        reg.register_intrinsic(LangItem(Eq), eq);
+        reg.register_intrinsic(LangItem(Neq), neq);
+        reg.register_intrinsic(LangItem(Lt), lt);
+        reg.register_intrinsic(LangItem(Le), le);
+        reg.register_intrinsic(LangItem(Gt), gt);
+        reg.register_intrinsic(LangItem(Ge), ge);
         reg
     }
 }

@@ -113,10 +113,10 @@ impl RegisterTracker {
         self.temp_first_run = true;
     }
 
-    fn clear_all(&mut self) {
-        self.held_pt = 0;
-        self.clear_temp();
-    }
+    // fn clear_all(&mut self) {
+    //     self.held_pt = 0;
+    //     self.clear_temp();
+    // }
 
     fn watermark(&self) -> u8 {
         if self.temp_first_run {
@@ -150,9 +150,9 @@ impl<'a> Compiler<'a> {
         self.frame_mut().regs.clear_temp();
     }
 
-    fn clear_all(&mut self) {
-        self.frame_mut().regs.clear_all();
-    }
+    // fn clear_all(&mut self) {
+    //     self.frame_mut().regs.clear_all();
+    // }
 
     pub(super) fn reuse_or_alloc(&mut self, ops: &[u8]) -> Result<u8> {
         for &op in ops {
@@ -171,7 +171,7 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    pub(super) fn watermark(&self) -> u8 {
+    pub(super) fn reg_watermark(&self) -> u8 {
         self.frame().regs.watermark()
     }
 }

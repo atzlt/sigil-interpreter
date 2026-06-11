@@ -135,6 +135,13 @@ impl fmt::Display for Chunk {
                     pos += 1;
                     writeln!(f, "LOADNIL R{dst}")?;
                 }
+                LOADFUN => {
+                    let dst = code[pos];
+                    pos += 1;
+                    let fn_id = u16::from_le_bytes([code[pos], code[pos + 1]]);
+                    pos += 2;
+                    writeln!(f, "LOADFUN R{dst} fn#{fn_id}")?;
+                }
                 GETGLB => {
                     let dst = code[pos];
                     pos += 1;
@@ -152,13 +159,12 @@ impl fmt::Display for Chunk {
                 CALL => {
                     let dst = code[pos];
                     pos += 1;
-                    let name_idx = u16::from_le_bytes([code[pos], code[pos + 1]]);
-                    pos += 2;
+                    let reg = code[pos];
+                    pos += 1;
                     let offset = code[pos] as usize;
                     pos += 1;
                     let argc = code[pos] as usize;
                     pos += 1;
-                    let name = self.constants.get(name_idx);
                     let args: Vec<String> = (0..argc)
                         .map(|_| {
                             let r = code[pos];
@@ -166,7 +172,25 @@ impl fmt::Display for Chunk {
                             format!("R{r}")
                         })
                         .collect();
-                    writeln!(f, "CALL    R{dst} {name} R+{offset} [{}]", args.join(", "))?;
+                    writeln!(f, "CALL    R{dst} R{reg} +{offset} [{}]", args.join(", "))?;
+                }
+                CALLK => {
+                    let dst = code[pos];
+                    pos += 1;
+                    let fn_id = u16::from_le_bytes([code[pos], code[pos + 1]]);
+                    pos += 2;
+                    let offset = code[pos] as usize;
+                    pos += 1;
+                    let argc = code[pos] as usize;
+                    pos += 1;
+                    let args: Vec<String> = (0..argc)
+                        .map(|_| {
+                            let r = code[pos];
+                            pos += 1;
+                            format!("R{r}")
+                        })
+                        .collect();
+                    writeln!(f, "CALLK   R{dst} ƒ_{fn_id} +{offset} [{}]", args.join(", "))?;
                 }
                 RETURN => {
                     let reg = code[pos];

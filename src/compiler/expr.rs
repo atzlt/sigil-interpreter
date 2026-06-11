@@ -6,7 +6,7 @@ use crate::{
         lexer::Token,
     },
     emit, emit_args,
-    functions::{FnId, LangItem},
+    functions::{FnLookupKey, LangItem},
     value::Value,
 };
 
@@ -99,12 +99,12 @@ impl<'a> Compiler<'a> {
             Token::Minus => {
                 self.advance()?;
                 let inner = self.parse_precedence(PREC_UNARY, target)?;
-                self.emit_unary(FnId::LangItem(LangItem::Neg), inner, target)
+                self.emit_unary(FnLookupKey::LangItem(LangItem::Neg), inner, target)
             }
             Token::Bang => {
                 self.advance()?;
                 let inner = self.parse_precedence(PREC_UNARY, target)?;
-                self.emit_unary(FnId::LangItem(LangItem::Not), inner, target)
+                self.emit_unary(FnLookupKey::LangItem(LangItem::Not), inner, target)
             }
             Token::LParen => {
                 let open_span = self.current_span().clone();
@@ -169,25 +169,41 @@ impl<'a> Compiler<'a> {
 
     fn emit_binary(&mut self, op: &Token, lhs: u8, rhs: u8, target: Option<u8>) -> Result<u8> {
         let fun = binary_op_lang_item(op);
-        let name_idx = self.chunk_mut().add_constant(Value::Fn(fun));
+        let fn_id = *self
+            .resolve_fn(&fun)
+            .ok_or_else(|| CompileError::UndefinedFunction {
+                name: fun.to_string(),
+                diag: (
+                    self.current_span().clone(),
+                    "this language item is not defined".to_string(),
+                ),
+            })?;
         let reg = if let Some(target) = target {
             target
         } else {
             self.reuse_or_alloc(&[lhs, rhs])?
         };
-        self.emit_call(reg, name_idx, 0, &[lhs, rhs]);
+        self.emit_call_const(reg, fn_id, 0, &[lhs, rhs]);
         self.free_other_temps(reg, &[lhs, rhs]);
         Ok(reg)
     }
 
-    fn emit_unary(&mut self, fun: FnId, operand: u8, target: Option<u8>) -> Result<u8> {
-        let fun = self.chunk_mut().add_constant(Value::Fn(fun));
+    fn emit_unary(&mut self, fun: FnLookupKey, operand: u8, target: Option<u8>) -> Result<u8> {
+        let fn_id = *self
+            .resolve_fn(&fun)
+            .ok_or_else(|| CompileError::UndefinedFunction {
+                name: fun.to_string(),
+                diag: (
+                    self.current_span().clone(),
+                    "this language item is not defined".to_string(),
+                ),
+            })?;
         let reg = if let Some(target) = target {
             target
         } else {
             self.reuse_or_alloc(&[operand])?
         };
-        self.emit_call(reg, fun, 0, &[operand]);
+        self.emit_call_const(reg, fn_id, 0, &[operand]);
         self.free_other_temps(reg, &[operand]);
         Ok(reg)
     }
@@ -263,19 +279,19 @@ impl<'a> Compiler<'a> {
     }
 }
 
-fn binary_op_lang_item(op: &Token) -> FnId {
+fn binary_op_lang_item(op: &Token) -> FnLookupKey {
     match op {
-        Token::Plus => FnId::LangItem(LangItem::Add),
-        Token::Minus => FnId::LangItem(LangItem::Sub),
-        Token::Star => FnId::LangItem(LangItem::Mul),
-        Token::Slash => FnId::LangItem(LangItem::Div),
-        Token::Percent => FnId::LangItem(LangItem::Rem),
-        Token::Equal => FnId::LangItem(LangItem::Eq),
-        Token::Neq => FnId::LangItem(LangItem::Neg),
-        Token::Lt => FnId::LangItem(LangItem::Lt),
-        Token::Le => FnId::LangItem(LangItem::Le),
-        Token::Gt => FnId::LangItem(LangItem::Gt),
-        Token::Ge => FnId::LangItem(LangItem::Ge),
+        Token::Plus => FnLookupKey::LangItem(LangItem::Add),
+        Token::Minus => FnLookupKey::LangItem(LangItem::Sub),
+        Token::Star => FnLookupKey::LangItem(LangItem::Mul),
+        Token::Slash => FnLookupKey::LangItem(LangItem::Div),
+        Token::Percent => FnLookupKey::LangItem(LangItem::Rem),
+        Token::Equal => FnLookupKey::LangItem(LangItem::Eq),
+        Token::Neq => FnLookupKey::LangItem(LangItem::Neg),
+        Token::Lt => FnLookupKey::LangItem(LangItem::Lt),
+        Token::Le => FnLookupKey::LangItem(LangItem::Le),
+        Token::Gt => FnLookupKey::LangItem(LangItem::Gt),
+        Token::Ge => FnLookupKey::LangItem(LangItem::Ge),
         // TODO: add more operators as language design settles
         _ => unreachable!("binary_op_method called on non-binary token"),
     }
