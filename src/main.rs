@@ -67,8 +67,13 @@ fn report_runtime_error(source: &str, err: &RuntimeError) {
     let src = Source::from(source);
 
     match err {
-        RuntimeError::StackOverflow => {
-            eprintln!("stack overflow");
+        RuntimeError::StackOverflow { span } => {
+            Report::build(ReportKind::Error, span.clone())
+                .with_message(format!("stack overflow"))
+                .with_label(Label::new(span.clone()).with_message("stack overflow"))
+                .finish()
+                .eprint(&src)
+                .unwrap();
         }
         RuntimeError::InvalidOpCode { op_byte, span } => {
             Report::build(ReportKind::Error, span.clone())

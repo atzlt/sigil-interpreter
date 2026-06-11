@@ -12,16 +12,16 @@ use crate::{
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum RuntimeError {
     #[error("stack overflow")]
-    StackOverflow,
-    #[error("invalid opcode: 0x{op_byte:02X} at {}..{}", span.start, span.end)]
+    StackOverflow { span: Range<usize> },
+    #[error("invalid opcode: 0x{op_byte:02X}")]
     InvalidOpCode { op_byte: u8, span: Range<usize> },
-    #[error("undefined function: {name} at {}..{}", span.start, span.end)]
+    #[error("undefined function: {name}")]
     UndefinedFunction { name: String, span: Range<usize> },
-    #[error("instruction pointer out of bounds: {ip} at {}..{}", span.start, span.end)]
+    #[error("instruction pointer out of bounds: {ip}")]
     IpOutOfBounds { ip: usize, span: Range<usize> },
 }
 
-fn locus_span(chunk: &Chunk, ip: usize) -> Range<usize> {
+pub(super) fn locus_span(chunk: &Chunk, ip: usize) -> Range<usize> {
     chunk.locus_at(ip).cloned().unwrap_or(0..0)
 }
 
@@ -58,7 +58,7 @@ impl<'c> VM<'c> {
     ) -> Result<Value, RuntimeError> {
         use OpCode::*;
 
-        self.frames.init_main(&chunks[0]);
+        self.frames.init_main(&chunks[0])?;
         loop {
             let op_byte = self.read();
             let op = OpCode::from_repr(op_byte).expect("Unrecognized opcode");
@@ -207,7 +207,7 @@ impl<'c> VM<'c> {
                     self.stack_mut()[offset + i + 1] = self.stack_index(regs[i]).clone();
                 }
 
-                self.enter_frame(chunk, dst, offset);
+                self.enter_frame(chunk, dst, offset)?;
             }
         }
         Ok(())

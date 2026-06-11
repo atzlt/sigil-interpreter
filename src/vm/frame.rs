@@ -2,10 +2,15 @@ use std::ops::{Index, IndexMut};
 
 use crate::{
     value::Value,
-    vm::{Chunk, ChunkReader, VM},
+    vm::{
+        Chunk, ChunkReader, VM,
+        exec::{RuntimeError, locus_span},
+    },
 };
 
 const MAX_CALL_DEPTH: usize = 256;
+const STACK_GROW: usize = 256;
+const STACK_INIT: usize = 256;
 
 #[derive(Debug)]
 pub(super) struct Frames<'c> {
@@ -22,8 +27,23 @@ impl Default for Frames<'_> {
 impl<'c> Frames<'c> {
     pub fn new() -> Self {
         Self {
-            stack: vec![const { Value::Nil }; 256 * MAX_CALL_DEPTH],
+            stack: vec![Value::Nil; STACK_INIT],
             frames: Vec::new(),
+        }
+    }
+
+    fn ensure_stack(&mut self, abs_idx: usize) -> Result<(), RuntimeError> {
+        if abs_idx >= self.stack.len() {
+            let new_len = ((abs_idx + STACK_GROW) / STACK_GROW) * STACK_GROW;
+            self.stack.resize(new_len, Value::Nil);
+        }
+
+        if self.stack.len() >= MAX_CALL_DEPTH * STACK_INIT {
+            Err(RuntimeError::StackOverflow {
+                span: locus_span(self.chunk(), self.ip()),
+            })
+        } else {
+            Ok(())
         }
     }
 
@@ -50,20 +70,30 @@ impl<'c> Frames<'c> {
     pub(super) fn set_ip(&mut self, new: usize) {
         self.frames.last_mut().unwrap().reader.ip = new
     }
-
-    fn new_frame(&mut self, chunk: &'c Chunk, ret_dst: usize, reg_offset: usize) {
-        let cur_offset = self.frame().reg_offset;
-        let frame = CallFrame::new(
-            cur_offset + ret_dst,
-            cur_offset + reg_offset + 1,
-            ChunkReader::new(chunk),
-        );
-        self.frames.push(frame);
+    pub(super) fn chunk(&self) -> &Chunk {
+        self.frames.last().unwrap().reader.chunk
     }
 
-    pub fn init_main(&mut self, chunk: &'c Chunk) {
+    fn new_frame(
+        &mut self,
+        chunk: &'c Chunk,
+        ret_dst: usize,
+        reg_offset: usize,
+    ) -> Result<(), RuntimeError> {
+        let cur_offset = self.frame().reg_offset;
+        let ret_dst_abs = cur_offset + ret_dst;
+        let reg_offset_abs = cur_offset + reg_offset + 1;
+        self.ensure_stack(reg_offset_abs + 255)?;
+        let frame = CallFrame::new(ret_dst_abs, reg_offset_abs, ChunkReader::new(chunk));
+        self.frames.push(frame);
+        Ok(())
+    }
+
+    pub fn init_main(&mut self, chunk: &'c Chunk) -> Result<(), RuntimeError> {
+        self.ensure_stack(STACK_INIT - 1)?;
         self.frames
             .push(CallFrame::new(0, 0, ChunkReader::new(chunk)));
+        Ok(())
     }
 
     /// Returns `true` if we have exited the top-level frame, hence exiting the whole program.
@@ -79,8 +109,14 @@ impl<'c> VM<'c> {
         self.frames.frame()
     }
 
-    pub(super) fn enter_frame(&mut self, chunk: &'c Chunk, ret_dst: usize, reg_offset: usize) {
-        self.frames.new_frame(chunk, ret_dst, reg_offset);
+    pub(super) fn enter_frame(
+        &mut self,
+        chunk: &'c Chunk,
+        ret_dst: usize,
+        reg_offset: usize,
+    ) -> Result<(), RuntimeError> {
+        self.frames.new_frame(chunk, ret_dst, reg_offset)?;
+        Ok(())
     }
 
     /// Returns `Some(return_value)` if we have exited the top-level frame, hence exiting the whole program.
@@ -132,7 +168,7 @@ impl<'c> VM<'c> {
     }
 
     pub(super) fn chunk(&self) -> &Chunk {
-        self.frames.frames.last().unwrap().reader.chunk
+        self.frames.chunk()
     }
 }
 
