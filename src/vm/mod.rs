@@ -1,5 +1,6 @@
 pub mod chunk;
 pub mod exec;
+mod frame;
 pub mod opcode;
 
 pub use chunk::Chunk;

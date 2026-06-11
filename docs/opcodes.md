@@ -83,15 +83,9 @@ Stores `stack[src]` into `globals[slot]`. Auto-grows the global vector on first 
 
 ### CALL `0x06`
 ```
-[ op ][ dst ][  wide fn  ][ argc ][ arg0 ]...[ argN ]
+[ op ][ dst ][  wide fn  ][offset][ argc ][ arg0 ]...[ argN ]
 ```
-Looks up `constants[fn]` as `Value::Fn(FnId)` in the function registry. Result → `stack[dst]`.
-
-### CALLC `0x07` *(unimplemented)*
-```
-[ op ][ dst ][ func ][ argc ][ arg0 ]...[ argN ]
-```
-Calls the function value in `stack[func]`.
+Looks up `constants[fn]` as `Value::Fn(FnId)` in the function registry. Set a new call frame starting at `offset + 1` of the current frame. Result → `stack[dst]`.
 
 ---
 

@@ -5,11 +5,6 @@ use crate::value::Value;
 
 pub type IntrinsicFn = fn(&[&Value]) -> Value;
 
-#[derive(Debug)]
-pub struct BytecodeFn {
-    bytecode_offset: usize,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, FromRepr, Display)]
 #[repr(u8)]
 pub enum LangItem {
@@ -37,7 +32,7 @@ pub enum FnId {
 #[derive(Debug)]
 pub enum FnType {
     Intrinsic(IntrinsicFn),
-    Bytecode(BytecodeFn),
+    Chunk(usize),
 }
 
 #[derive(Debug, Default)]

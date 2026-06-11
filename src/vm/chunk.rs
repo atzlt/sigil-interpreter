@@ -38,6 +38,10 @@ impl Chunk {
         i16::from_le_bytes(bytes)
     }
 
+    pub fn append(&mut self, bytes: &[u8]) {
+        self.code.extend_from_slice(bytes);
+    }
+
     pub fn emit(&mut self, byte: u8) {
         self.code.push(byte);
     }
@@ -150,6 +154,8 @@ impl fmt::Display for Chunk {
                     pos += 1;
                     let name_idx = u16::from_le_bytes([code[pos], code[pos + 1]]);
                     pos += 2;
+                    let offset = code[pos] as usize;
+                    pos += 1;
                     let argc = code[pos] as usize;
                     pos += 1;
                     let name = self.constants.get(name_idx);
@@ -160,23 +166,7 @@ impl fmt::Display for Chunk {
                             format!("R{r}")
                         })
                         .collect();
-                    writeln!(f, "CALL    R{dst} {name} [{}]", args.join(", "))?;
-                }
-                CALLC => {
-                    let dst = code[pos];
-                    pos += 1;
-                    let func = code[pos];
-                    pos += 1;
-                    let argc = code[pos] as usize;
-                    pos += 1;
-                    let args: Vec<String> = (0..argc)
-                        .map(|_| {
-                            let r = code[pos];
-                            pos += 1;
-                            format!("R{r}")
-                        })
-                        .collect();
-                    writeln!(f, "CALLC   R{dst} R{func} [{}]", args.join(", "))?;
+                    writeln!(f, "CALL    R{dst} {name} R+{offset} [{}]", args.join(", "))?;
                 }
                 RETURN => {
                     let reg = code[pos];

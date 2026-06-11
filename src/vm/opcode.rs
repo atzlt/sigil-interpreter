@@ -10,7 +10,6 @@ pub enum OpCode {
     GETGLB,
     SETGLB,
     CALL,
-    CALLC,
     RETURN,
     JMP,
     TEST,

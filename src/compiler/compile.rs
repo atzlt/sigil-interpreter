@@ -168,7 +168,7 @@ pub fn compile_program(source: &str) -> Result<Chunk> {
     let nil_reg = c.alloc_temp()?;
     emit!(c.chunk_mut(), LOADNIL, nil_reg);
     emit!(c.chunk_mut(), RETURN, nil_reg);
-    
+
     // Temporary code
     let mut chunk = c.chunks;
     Ok(chunk.pop().unwrap())
@@ -274,6 +274,12 @@ impl Compiler<'_> {
         if dst != src {
             emit!(self.chunk_mut(), MOVE, dst, src);
         }
+    }
+
+    pub(super) fn emit_call(&mut self, dst: u8, fn_slot: u16, frame_offset: u8, args: &[u8]) {
+        let argc = args.len();
+        emit!(self.chunk_mut(), CALL, dst, wide fn_slot, frame_offset, argc);
+        self.chunk_mut().append(args);
     }
 
     pub(super) fn emit_test(&mut self, lhs: u8) -> usize {

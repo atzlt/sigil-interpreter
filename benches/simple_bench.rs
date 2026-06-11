@@ -1,13 +1,12 @@
 use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use sigil_interpreter::{compiler::compile::compile_program, functions::FunctionRegistry, vm::VM};
+use sigil_interpreter::{compiler::compile::compile_program, vm::VM};
 
 fn compile_and_run(source: &str) {
     let mut chunk = compile_program(source).unwrap();
-    let registry = FunctionRegistry::with_std();
-    let mut vm = VM::new();
-    vm.run(&mut chunk, &registry).unwrap();
+    let mut vm = VM::default();
+    vm.run(&mut chunk).unwrap();
 }
 
 fn bench_expr_long_chain(c: &mut Criterion) {

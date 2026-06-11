@@ -1,5 +1,4 @@
 use sigil_interpreter::{
-    functions::FunctionRegistry,
     value::Value,
     vm::{Chunk, OpCode::*, VM},
 };
@@ -29,9 +28,8 @@ fn test_loadk_and_move() {
     chunk.emit_opcode(RETURN);
     chunk.emit(2);
 
-    let registry = FunctionRegistry::new();
-    let mut vm = VM::new();
-    let result = vm.run(&mut chunk, &registry).unwrap();
+    let mut vm = VM::default();
+    let result = vm.run(&mut chunk).unwrap();
     assert_eq!(result, Value::Number(42.0));
 }
 
@@ -49,9 +47,8 @@ fn test_bool_and_nil() {
     chunk.emit_opcode(RETURN);
     chunk.emit(0);
 
-    let registry = FunctionRegistry::new();
-    let mut vm = VM::new();
-    let result = vm.run(&mut chunk, &registry).unwrap();
+    let mut vm = VM::default();
+    let result = vm.run(&mut chunk).unwrap();
     assert_eq!(result, Value::Bool(true));
 }
 
@@ -77,9 +74,8 @@ fn test_jmp() {
     chunk.emit_opcode(RETURN);
     chunk.emit(1);
 
-    let registry = FunctionRegistry::new();
-    let mut vm = VM::new();
-    let result = vm.run(&mut chunk, &registry).unwrap();
+    let mut vm = VM::default();
+    let result = vm.run(&mut chunk).unwrap();
     assert_eq!(
         result,
         Value::Number(10.0),
@@ -107,9 +103,8 @@ fn test_test_true() {
     chunk.emit_opcode(RETURN);
     chunk.emit(1);
 
-    let registry = FunctionRegistry::new();
-    let mut vm = VM::new();
-    let result = vm.run(&mut chunk, &registry).unwrap();
+    let mut vm = VM::default();
+    let result = vm.run(&mut chunk).unwrap();
     assert_eq!(
         result,
         Value::Number(99.0),
@@ -144,9 +139,8 @@ fn test_test_false() {
     chunk.emit_opcode(RETURN);
     chunk.emit(2);
 
-    let registry = FunctionRegistry::new();
-    let mut vm = VM::new();
-    let result = vm.run(&mut chunk, &registry).unwrap();
+    let mut vm = VM::default();
+    let result = vm.run(&mut chunk).unwrap();
     assert_eq!(
         result,
         Value::Number(10.0),

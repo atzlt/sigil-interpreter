@@ -175,7 +175,7 @@ impl<'a> Compiler<'a> {
         } else {
             self.reuse_or_alloc(&[lhs, rhs])?
         };
-        emit!(self.chunk_mut(), CALL, reg, wide name_idx, 2_u8, lhs, rhs);
+        self.emit_call(reg, name_idx, 0, &[lhs, rhs]);
         self.free_other_temps(reg, &[lhs, rhs]);
         Ok(reg)
     }
@@ -187,7 +187,7 @@ impl<'a> Compiler<'a> {
         } else {
             self.reuse_or_alloc(&[operand])?
         };
-        emit!(self.chunk_mut(), CALL, reg, wide fun, 1_u8, operand);
+        self.emit_call(reg, fun, 0, &[operand]);
         self.free_other_temps(reg, &[operand]);
         Ok(reg)
     }

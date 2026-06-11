@@ -3,7 +3,6 @@ use std::{env, fs, process};
 use ariadne::{Label, Report, ReportKind, Source};
 use sigil_interpreter::{
     compiler::compile::{CompileError, compile_program},
-    functions::FunctionRegistry,
     value::Value,
     vm::{VM, exec::RuntimeError},
 };
@@ -121,9 +120,8 @@ fn main() {
         }
     };
 
-    let registry = FunctionRegistry::with_std();
-    let mut vm = VM::new();
-    match vm.run(&mut chunk, &registry) {
+    let mut vm = VM::default();
+    match vm.run(&mut chunk) {
         Ok(val) => {
             if val != Value::Nil {
                 println!("{val}");
