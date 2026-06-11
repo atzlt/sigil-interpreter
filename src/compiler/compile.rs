@@ -133,7 +133,7 @@ pub enum CompileError {
     #[error("undefined variable: {name}")]
     UndefinedVariable { name: String, diag: SpanInfo },
     #[error("undefined function: {name}")]
-    UndefinedFunction{ name: String, diag: SpanInfo },
+    UndefinedFunction { name: String, diag: SpanInfo },
 }
 
 pub type Result<T> = std::result::Result<T, CompileError>;
@@ -158,31 +158,33 @@ fn new_compiler(source: &str) -> Compiler<'_> {
     }
 }
 
-pub fn compile_expr(source: &str) -> Result<Vec<Chunk>> {
+pub fn compile_expr(source: &str) -> Result<(Vec<Chunk>, FunctionRegistry)> {
     let mut c = new_compiler(source);
     c.advance()?;
     let result_reg = c.expression(None)?;
     emit!(c.chunk_mut(), RETURN, result_reg);
 
-    Ok(c.chunks)
+    Ok(c.take_compiled())
 }
 
-pub fn compile_program(source: &str) -> Result<Vec<Chunk>> {
+pub fn compile_program(source: &str) -> Result<(Vec<Chunk>, FunctionRegistry)> {
     let mut c = new_compiler(source);
     c.advance()?;
     while !c.check(&Token::Eof) {
         c.statement()?;
     }
-    let nil_reg = c.alloc_temp()?;
-    emit!(c.chunk_mut(), LOADNIL, nil_reg);
-    emit!(c.chunk_mut(), RETURN, nil_reg);
+    c.emit_safety_net()?;
 
-    Ok(c.chunks)
+    Ok(c.take_compiled())
 }
 
 // ── Token handling ──
 
 impl Compiler<'_> {
+    pub fn take_compiled(self) -> (Vec<Chunk>, FunctionRegistry) {
+        (self.chunks, self.funcs)
+    }
+
     pub(super) fn advance(&mut self) -> Result<()> {
         self.tokens.advance(&mut self.lexer)
     }
@@ -282,15 +284,28 @@ impl Compiler<'_> {
         self.funcs.get_id(name)
     }
 
+    pub(super) fn emit_safety_net(&mut self) -> Result<()> {
+        let nil_reg = self.alloc_temp()?;
+        emit!(self.chunk_mut(), LOADNIL, nil_reg);
+        emit!(self.chunk_mut(), RETURN, nil_reg);
+        Ok(())
+    }
+
     pub(super) fn emit_move(&mut self, dst: u8, src: u8) {
         if dst != src {
             emit!(self.chunk_mut(), MOVE, dst, src);
         }
     }
 
-    pub(super) fn emit_call_const(&mut self, dst: u8, fn_slot: usize, frame_offset: u8, args: &[u8]) {
+    pub(super) fn emit_callk(&mut self, dst: u8, fn_slot: usize, frame_offset: u8, args: &[u8]) {
         let argc = args.len();
         emit!(self.chunk_mut(), CALLK, dst, wide fn_slot as u16, frame_offset, argc);
+        self.chunk_mut().append(args);
+    }
+
+    pub(super) fn emit_call(&mut self, dst: u8, reg: u8, frame_offset: u8, args: &[u8]) {
+        let argc = args.len();
+        emit!(self.chunk_mut(), CALL, dst, reg, frame_offset, argc);
         self.chunk_mut().append(args);
     }
 
@@ -363,7 +378,7 @@ pub(super) struct CompilerFrame {
 impl CompilerFrame {
     fn new(chunk_idx: usize, args: &[Spur]) -> Self {
         Self {
-            regs: RegisterTracker::new(256),
+            regs: RegisterTracker::new_with(256, args.len()),
             locals: LocalsTracker::new_with(args),
             loops: LoopTracker::new(),
             chunk_idx,

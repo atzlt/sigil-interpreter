@@ -29,21 +29,19 @@ fn locus_span(chunk: &Chunk) -> Range<usize> {
 pub struct VM {
     pub(super) frames: Frames,
     globals: Vec<Value>,
-    registry: FunctionRegistry,
 }
 
 impl Default for VM {
     fn default() -> Self {
-        Self::new(FunctionRegistry::with_std())
+        Self::new()
     }
 }
 
 impl VM {
-    pub fn new(registry: FunctionRegistry) -> Self {
+    pub fn new() -> Self {
         Self {
             frames: Frames::new(),
             globals: Vec::new(),
-            registry,
         }
     }
 
@@ -53,7 +51,11 @@ impl VM {
         }
     }
 
-    pub fn run(&mut self, chunk: &mut [Chunk]) -> Result<Value, RuntimeError> {
+    pub fn run(
+        &mut self,
+        chunk: &mut [Chunk],
+        registry: &FunctionRegistry,
+    ) -> Result<Value, RuntimeError> {
         use OpCode::*;
 
         macro_rules! chunk {
@@ -125,8 +127,8 @@ impl VM {
                             });
                         }
                     };
-    
-                    self.handle_call(chunk, fn_id, argc, dst, offset)?;
+
+                    self.handle_call(chunk, registry, fn_id, argc, dst, offset)?;
                 }
                 CALLK => {
                     let dst: usize = chunk!().read() as usize;
@@ -134,7 +136,7 @@ impl VM {
                     let offset = chunk!().read() as usize;
                     let argc = chunk!().read() as usize;
 
-                    self.handle_call(chunk, fn_id, argc, dst, offset)?;
+                    self.handle_call(chunk, registry, fn_id, argc, dst, offset)?;
                 }
                 RETURN => {
                     let reg = chunk!().read() as usize;
@@ -183,6 +185,7 @@ impl VM {
     fn handle_call(
         &mut self,
         chunk: &mut [Chunk],
+        registry: &FunctionRegistry,
         fn_id: usize,
         argc: usize,
         dst: usize,
@@ -193,11 +196,10 @@ impl VM {
                 chunk[self.chunk_idx()]
             };
         }
-        let func = self
-            .registry
+        let func = registry
             .get(&fn_id)
             .ok_or_else(|| RuntimeError::UndefinedFunction {
-                name: format!("{fn_id}"),
+                name: format!("{}", registry.resolve_id(fn_id)),
                 span: locus_span(&chunk!()),
             })?;
 
@@ -215,12 +217,13 @@ impl VM {
                 self.stack_mut()[dst] = result;
             }
             FnEntry::ChunkIdx(chunk_idx) => {
-                let chunk_idx = *chunk_idx;
+                let chunk_idx = chunk_idx;
                 for i in 1..=argc {
                     let window = &self.stack();
                     self.stack_mut()[offset + i] = window[chunk!().read() as usize].clone();
                 }
-                self.enter_frame(chunk_idx, dst, offset);
+                chunk[*chunk_idx].reset_ip();
+                self.enter_frame(*chunk_idx, dst, offset);
             }
         }
         Ok(())

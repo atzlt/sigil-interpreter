@@ -59,7 +59,7 @@ fn report_compile_error(source: &str, err: &CompileError) {
                 .eprint(&src)
                 .unwrap();
         }
-        _ => todo!()
+        _ => todo!(),
     }
 }
 
@@ -113,7 +113,7 @@ fn main() {
         }
     };
 
-    let mut chunk = match compile_program(&source) {
+    let mut compiled = match compile_program(&source) {
         Ok(c) => c,
         Err(e) => {
             report_compile_error(&source, &e);
@@ -122,7 +122,7 @@ fn main() {
     };
 
     let mut vm = VM::default();
-    match vm.run(&mut chunk) {
+    match vm.run(&mut compiled.0, &compiled.1) {
         Ok(val) => {
             if val != Value::Nil {
                 println!("{val}");

@@ -37,6 +37,19 @@ impl RegisterTracker {
         }
     }
 
+    pub fn new_with(size: usize, argc: usize) -> Self {
+        assert!(size <= 256);
+        assert!(argc < size);
+        let mut state = vec![RegState::Held; argc];
+        state.extend_from_slice(&vec![RegState::Free; size - argc]);
+        Self {
+            state,
+            held_pt: argc,
+            temp_pt: argc,
+            temp_first_run: true,
+        }
+    }
+
     fn inc_held(&mut self) {
         self.held_pt += 1;
         if self.held_pt > self.temp_pt {

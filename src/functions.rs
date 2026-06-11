@@ -41,6 +41,7 @@ pub enum FnEntry {
 #[derive(Debug, Default)]
 pub struct FunctionRegistry {
     keys: AHashMap<FnLookupKey, usize>,
+    backward: Vec<FnLookupKey>,
     entries: Vec<FnEntry>,
 }
 
@@ -48,20 +49,24 @@ impl FunctionRegistry {
     pub fn new() -> Self {
         FunctionRegistry {
             keys: AHashMap::new(),
+            backward: Vec::new(),
             entries: Vec::new(),
         }
     }
 
     pub fn register_intrinsic(&mut self, name: FnLookupKey, func: IntrinsicFn) {
         self.entries.push(FnEntry::Intrinsic(func));
+        self.backward.push(name);
         let id = self.entries.len() - 1;
         self.keys.insert(name, id);
     }
 
-    pub fn register(&mut self, name: FnLookupKey, idx: usize) {
+    pub fn register(&mut self, name: FnLookupKey, idx: usize) -> usize {
         self.entries.push(FnEntry::ChunkIdx(idx));
+        self.backward.push(name);
         let id = self.entries.len() - 1;
         self.keys.insert(name, id);
+        id
     }
 
     pub fn get_id(&self, name: &FnLookupKey) -> Option<&usize> {
@@ -70,6 +75,10 @@ impl FunctionRegistry {
 
     pub fn get(&self, id: &usize) -> Option<&FnEntry> {
         self.entries.get(*id)
+    }
+
+    pub fn resolve_id(&self, id: usize) -> FnLookupKey {
+        self.backward[id]
     }
 
     pub fn with_std() -> Self {

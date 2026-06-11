@@ -13,9 +13,10 @@ impl GlobalStore {
         if let Some(slot) = self.slots.get(&id) {
             *slot
         } else {
-            self.ptr += 1;
+            let slot = self.ptr;
             self.slots.insert(id, self.ptr);
-            self.ptr
+            self.ptr += 1;
+            slot
         }
     }
 

@@ -105,15 +105,23 @@ impl<'a> Compiler<'a> {
             });
         };
         let args = self.parse_arglist()?;
-        let chunk_idx = self.new_frame(&args);
-        self.parse_block()?;
-        self.exit_frame()?;
 
+        let chunk_idx = self.chunks.len();
         if self.is_top_level() {
-            self.funcs.register(FnLookupKey::Name(name), chunk_idx);
+            let id = self.funcs.register(FnLookupKey::Name(name), chunk_idx);
+            let slot = self.globals.declare(name);
+            let temp = self.alloc_temp()?;
+            emit!(self.chunk_mut(), LOADFUN, temp, wide id as u16);
+            emit!(self.chunk_mut(), SETGLB, wide slot, temp);
+            self.frame_mut().regs.free_temp(temp);
         } else {
             unimplemented!("Nested function declaration is not supported yet")
         }
+
+        self.new_frame(&args);
+        self.parse_block()?;
+        self.emit_safety_net()?;
+        self.exit_frame()?;
 
         Ok(())
     }
@@ -270,7 +278,7 @@ impl Compiler<'_> {
                 token: self.current(),
                 diag: (
                     self.current_span().clone(),
-                    "expect argument list to close".to_string(),
+                    "expect argument list to close here".to_string(),
                 ),
             })?;
         Ok(args)

@@ -150,10 +150,10 @@ impl fmt::Display for Chunk {
                     writeln!(f, "GETGLB  R{dst} G{slot}")?;
                 }
                 SETGLB => {
-                    let src = code[pos];
-                    pos += 1;
                     let slot = u16::from_le_bytes([code[pos], code[pos + 1]]);
                     pos += 2;
+                    let src = code[pos];
+                    pos += 1;
                     writeln!(f, "SETGLB  G{slot} R{src}")?;
                 }
                 CALL => {
@@ -190,7 +190,11 @@ impl fmt::Display for Chunk {
                             format!("R{r}")
                         })
                         .collect();
-                    writeln!(f, "CALLK   R{dst} ƒ_{fn_id} +{offset} [{}]", args.join(", "))?;
+                    writeln!(
+                        f,
+                        "CALLK   R{dst} ƒ_{fn_id} +{offset} [{}]",
+                        args.join(", ")
+                    )?;
                 }
                 RETURN => {
                     let reg = code[pos];

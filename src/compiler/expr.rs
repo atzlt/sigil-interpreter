@@ -20,6 +20,7 @@ const PREC_COMPARISON: u8 = 50;
 const PREC_TERM: u8 = 60;
 const PREC_FACTOR: u8 = 70;
 const PREC_UNARY: u8 = 80;
+const PREC_CALL: u8 = 90;
 
 #[derive(Clone, Copy)]
 enum Assoc {
@@ -55,6 +56,9 @@ impl<'a> Compiler<'a> {
                 }
                 Token::Or => {
                     lhs = self.emit_short_circuit_or(lhs, target)?;
+                }
+                Token::LParen => {
+                    lhs = self.parse_call_expression(lhs, target)?;
                 }
                 _ => {
                     let next_bp = match assoc {
@@ -183,7 +187,7 @@ impl<'a> Compiler<'a> {
         } else {
             self.reuse_or_alloc(&[lhs, rhs])?
         };
-        self.emit_call_const(reg, fn_id, 0, &[lhs, rhs]);
+        self.emit_callk(reg, fn_id, 0, &[lhs, rhs]);
         self.free_other_temps(reg, &[lhs, rhs]);
         Ok(reg)
     }
@@ -203,7 +207,7 @@ impl<'a> Compiler<'a> {
         } else {
             self.reuse_or_alloc(&[operand])?
         };
-        self.emit_call_const(reg, fn_id, 0, &[operand]);
+        self.emit_callk(reg, fn_id, 0, &[operand]);
         self.free_other_temps(reg, &[operand]);
         Ok(reg)
     }
@@ -277,6 +281,35 @@ impl<'a> Compiler<'a> {
         self.patch_if_else(test_ip, if_end, else_start, else_end);
         Ok(reg)
     }
+
+    fn parse_call_expression(&mut self, lhs: u8, target: Option<u8>) -> Result<u8> {
+        let mut args = vec![];
+        loop {
+            if self.current() == Token::RParen {
+                break;
+            }
+            let arg = self.expression(target)?;
+            args.push(arg);
+            if !self.matches(&Token::Comma)? {
+                break;
+            }
+        }
+        self.consume(&Token::RParen)
+            .map_err(|_| CompileError::Unexpected {
+                token: self.current(),
+                diag: (
+                    self.current_span().clone(),
+                    "expect argument list to close here".to_string(),
+                ),
+            })?;
+        let dst = if let Some(target) = target {
+            target
+        } else {
+            self.reuse_or_alloc(&[lhs])?
+        };
+        self.emit_call(dst, lhs, self.reg_watermark(), &args);
+        Ok(dst)
+    }
 }
 
 fn binary_op_lang_item(op: &Token) -> FnLookupKey {
@@ -308,6 +341,7 @@ fn infix_bp_assoc(tok: &Token) -> Option<(u8, Assoc)> {
         Token::Lt | Token::Le | Token::Gt | Token::Ge => Some((PREC_COMPARISON, Assoc::Left)),
         Token::Plus | Token::Minus => Some((PREC_TERM, Assoc::Left)),
         Token::Star | Token::Slash | Token::Percent => Some((PREC_FACTOR, Assoc::Left)),
+        Token::LParen => Some((PREC_CALL, Assoc::Left)),
         // TODO: add more infix operators as language design settles
         _ => None,
     }
