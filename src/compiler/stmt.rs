@@ -169,7 +169,7 @@ impl<'a> Compiler<'a> {
             return Err(CompileError::Unexpected {
                 token: self.current(),
                 diag: (
-                    self.current_span().clone(),
+                    self.prev_span().clone(),
                     "expected modifier name after @".to_string(),
                 ),
             });
@@ -181,7 +181,7 @@ impl<'a> Compiler<'a> {
                 .map_err(|_| CompileError::Unexpected {
                     token: self.current(),
                     diag: (
-                        self.current_span().clone(),
+                        self.prev_span().clone(),
                         "expected '(' after @lang_item".to_string(),
                     ),
                 })?;
@@ -192,7 +192,7 @@ impl<'a> Compiler<'a> {
                 return Err(CompileError::Unexpected {
                     token: self.current(),
                     diag: (
-                        self.current_span().clone(),
+                        self.prev_span().clone(),
                         "expected lang item name".to_string(),
                     ),
                 });
@@ -202,7 +202,7 @@ impl<'a> Compiler<'a> {
                 LangItem::from_name(item_name).ok_or_else(|| CompileError::Unexpected {
                     token: self.current(),
                     diag: (
-                        self.current_span().clone(),
+                        self.prev_span().clone(),
                         format!("unknown lang item: {item_name}"),
                     ),
                 })?;
@@ -210,7 +210,7 @@ impl<'a> Compiler<'a> {
                 .map_err(|_| CompileError::Unexpected {
                     token: self.current(),
                     diag: (
-                        self.current_span().clone(),
+                        self.prev_span().clone(),
                         "expected ')' after @lang_item".to_string(),
                     ),
                 })?;
@@ -220,7 +220,7 @@ impl<'a> Compiler<'a> {
             Err(CompileError::Unexpected {
                 token: Token::Other,
                 diag: (
-                    self.current_span().clone(),
+                    self.prev_span().clone(),
                     format!("unknown modifier: @{name}"),
                 ),
             })

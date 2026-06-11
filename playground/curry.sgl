@@ -1,0 +1,13 @@
+@intrinsic fn print(x);
+
+let a = 0;
+
+fn accumulate(x) {
+    a = a + x;
+    return accumulate;
+}
+
+accumulate(1)(2);
+accumulate(3)(4)(5);
+
+print(a);

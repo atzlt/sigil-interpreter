@@ -1,7 +1,15 @@
 @intrinsic
 fn print(x);
 
-@lang_item(add)
-fn su(x, y) { return x - y; }
+@lang_item(lt)
+fn add_zero(a, b) {
+    let i = 1;
+    while i <= b {
+        a = a * 10;
+        i = i + 1;
+    }
+    return a;
+}
 
-return 1 + 2;
+print(2 < 3);
+print(print);

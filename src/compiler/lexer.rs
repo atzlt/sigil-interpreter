@@ -69,7 +69,7 @@ pub enum Token {
     })]
     String(Spur),
 
-    #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*", |lex| {
+    #[regex(r"[\p{L}_][\p{L}\p{N}_]*", |lex| {
         lex.extras.interner.get_or_intern(lex.slice())
     })]
     Identifier(Spur),
