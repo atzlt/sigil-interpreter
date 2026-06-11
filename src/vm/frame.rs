@@ -47,6 +47,10 @@ impl VM {
         self.frames.frame()
     }
 
+    pub(super) fn chunk_idx(&self) -> usize {
+        self.frame().chunk_idx
+    }
+
     pub(super) fn enter_frame(&mut self, chunk_idx: usize, ret_dst: usize, reg_offset: usize) {
         self.frames.new_frame(chunk_idx, ret_dst, reg_offset);
     }
@@ -78,7 +82,6 @@ impl VM {
 #[derive(Debug)]
 struct CallFrame {
     chunk_idx: usize,
-    ip: usize,
     ret_dst: usize,
     reg_offset: usize,
 }
@@ -87,7 +90,6 @@ impl CallFrame {
     fn new(chunk_idx: usize, ret_dst: usize, reg_offset: usize) -> Self {
         Self {
             chunk_idx,
-            ip: 0,
             ret_dst,
             reg_offset,
         }

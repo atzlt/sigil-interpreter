@@ -148,18 +148,16 @@ fn new_compiler(source: &str) -> Compiler<'_> {
     }
 }
 
-pub fn compile_expr(source: &str) -> Result<Chunk> {
+pub fn compile_expr(source: &str) -> Result<Vec<Chunk>> {
     let mut c = new_compiler(source);
     c.advance()?;
     let result_reg = c.expression(None)?;
     emit!(c.chunk_mut(), RETURN, result_reg);
 
-    // Temporary code
-    let mut chunk = c.chunks;
-    Ok(chunk.pop().unwrap())
+    Ok(c.chunks)
 }
 
-pub fn compile_program(source: &str) -> Result<Chunk> {
+pub fn compile_program(source: &str) -> Result<Vec<Chunk>> {
     let mut c = new_compiler(source);
     c.advance()?;
     while !c.check(&Token::Eof) {
@@ -169,9 +167,7 @@ pub fn compile_program(source: &str) -> Result<Chunk> {
     emit!(c.chunk_mut(), LOADNIL, nil_reg);
     emit!(c.chunk_mut(), RETURN, nil_reg);
 
-    // Temporary code
-    let mut chunk = c.chunks;
-    Ok(chunk.pop().unwrap())
+    Ok(c.chunks)
 }
 
 // ── Token handling ──

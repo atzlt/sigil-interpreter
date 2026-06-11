@@ -53,71 +53,77 @@ impl VM {
         }
     }
 
-    pub fn run(&mut self, chunk: &mut Chunk) -> Result<Value, RuntimeError> {
+    pub fn run(&mut self, chunk: &mut [Chunk]) -> Result<Value, RuntimeError> {
         use OpCode::*;
 
-        chunk.reset_ip();
+        macro_rules! chunk {
+            () => {
+                chunk[self.chunk_idx()]
+            };
+        }
+
+        chunk!().reset_ip();
         loop {
-            if chunk.ip >= chunk.code.len() {
+            if chunk!().ip >= chunk!().code.len() {
                 return Err(RuntimeError::IpOutOfBounds {
-                    ip: chunk.ip,
-                    span: locus_span(chunk),
+                    ip: chunk!().ip,
+                    span: locus_span(&chunk!()),
                 });
             }
-            let op_byte = chunk.read();
+            let op_byte = chunk!().read();
             let op = OpCode::from_repr(op_byte).expect("Unrecognized opcode");
             match op {
                 MOVE => {
-                    let dst = chunk.read() as usize;
-                    let src = chunk.read() as usize;
+                    let dst = chunk!().read() as usize;
+                    let src = chunk!().read() as usize;
                     self.stack_mut()[dst] = self.stack()[src].clone();
                 }
                 LOADK => {
-                    let dst = chunk.read() as usize;
-                    let k = chunk.read_wide() as usize;
-                    self.stack_mut()[dst] = chunk.constants.get(k as u16).clone();
+                    let dst = chunk!().read() as usize;
+                    let k = chunk!().read_wide() as usize;
+                    self.stack_mut()[dst] = chunk!().constants.get(k as u16).clone();
                 }
                 LOADBOOL => {
-                    let dst = chunk.read() as usize;
-                    let val = chunk.read() != 0;
+                    let dst = chunk!().read() as usize;
+                    let val = chunk!().read() != 0;
                     self.stack_mut()[dst] = Value::Bool(val);
                 }
                 LOADNIL => {
-                    let dst = chunk.read() as usize;
+                    let dst = chunk!().read() as usize;
                     self.stack_mut()[dst] = Value::Nil;
                 }
                 GETGLB => {
-                    let dst = chunk.read() as usize;
-                    let slot = chunk.read_wide() as usize;
+                    let dst = chunk!().read() as usize;
+                    let slot = chunk!().read_wide() as usize;
                     self.ensure_global(slot);
                     self.stack_mut()[dst] = self.globals[slot].clone();
                 }
                 SETGLB => {
-                    let slot = chunk.read_wide() as usize;
-                    let src = chunk.read() as usize;
+                    let slot = chunk!().read_wide() as usize;
+                    let src = chunk!().read() as usize;
                     self.ensure_global(slot);
                     self.globals[slot] = self.stack()[src].clone();
                 }
                 CALL => {
-                    let dst = chunk.read() as usize;
-                    let name_idx = chunk.read_wide() as usize;
-                    let offset = chunk.read() as usize;
-                    let argc = chunk.read() as usize;
+                    let dst = chunk!().read() as usize;
+                    let name_idx = chunk!().read_wide() as usize;
+                    let offset = chunk!().read() as usize;
+                    let argc = chunk!().read() as usize;
 
-                    let name = chunk.constants.get(name_idx as u16);
+                    let name = chunk!().constants.get(name_idx as u16);
                     let fn_id = match name {
                         Value::Fn(f) => f,
                         _ => {
                             return Err(RuntimeError::UndefinedFunction {
                                 name: "this variable is not callable".into(),
-                                span: locus_span(chunk),
+                                span: locus_span(&chunk!()),
                             });
                         }
                     };
                     let func = self.registry.get(fn_id).ok_or_else(|| {
                         RuntimeError::UndefinedFunction {
                             name: format!("{fn_id}"),
-                            span: locus_span(chunk),
+                            span: locus_span(&chunk!()),
                         }
                     })?;
 
@@ -126,7 +132,7 @@ impl VM {
                             let window = &self.stack();
                             let mut args: SmallVec<[_; 8]> = SmallVec::with_capacity(argc);
                             for _ in 0..argc {
-                                let val_ref = &window[chunk.read() as usize];
+                                let val_ref = &window[chunk!().read() as usize];
                                 args.push(val_ref);
                             }
 
@@ -139,7 +145,7 @@ impl VM {
                             for i in 1..=argc {
                                 let window = &self.stack();
                                 self.stack_mut()[offset + i] =
-                                    window[chunk.read() as usize].clone();
+                                    window[chunk!().read() as usize].clone();
                             }
                             self.enter_frame(chunk_idx, dst, offset);
                             unimplemented!("Bytecode function compilation not supported")
@@ -147,43 +153,43 @@ impl VM {
                     }
                 }
                 RETURN => {
-                    let reg = chunk.read() as usize;
+                    let reg = chunk!().read() as usize;
                     let from_top_level = self.exit_frame(reg);
                     if let Some(ret) = from_top_level {
                         return Ok(ret);
                     }
                 }
                 JMP => {
-                    let ip = chunk.ip as isize - 1;
-                    let offset = chunk.read_i16();
+                    let ip = chunk!().ip as isize - 1;
+                    let offset = chunk!().read_i16();
                     let new_ip = ip + offset as isize;
-                    if new_ip < 0 || new_ip as usize >= chunk.code.len() {
+                    if new_ip < 0 || new_ip as usize >= chunk!().code.len() {
                         return Err(RuntimeError::IpOutOfBounds {
-                            ip: chunk.ip,
-                            span: locus_span(chunk),
+                            ip: chunk!().ip,
+                            span: locus_span(&chunk!()),
                         });
                     }
-                    chunk.ip = new_ip as usize;
+                    chunk!().ip = new_ip as usize;
                 }
                 TEST => {
-                    let ip = chunk.ip as isize - 1;
-                    let reg = chunk.read() as usize;
-                    let offset = chunk.read_i16();
+                    let ip = chunk!().ip as isize - 1;
+                    let reg = chunk!().read() as usize;
+                    let offset = chunk!().read_i16();
                     if !self.stack()[reg].is_truthy() {
                         let new_ip = ip + offset as isize;
-                        if new_ip < 0 || new_ip as usize >= chunk.code.len() {
+                        if new_ip < 0 || new_ip as usize >= chunk!().code.len() {
                             return Err(RuntimeError::IpOutOfBounds {
-                                ip: chunk.ip,
-                                span: locus_span(chunk),
+                                ip: chunk!().ip,
+                                span: locus_span(&chunk!()),
                             });
                         }
-                        chunk.ip = new_ip as usize;
+                        chunk!().ip = new_ip as usize;
                     }
                 }
                 CLOSURE | NEWSTRUCT => {
                     return Err(RuntimeError::InvalidOpCode {
                         op_byte,
-                        span: locus_span(chunk),
+                        span: locus_span(&chunk!()),
                     });
                 }
             }
