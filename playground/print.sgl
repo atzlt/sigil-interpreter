@@ -1,0 +1,4 @@
+@intrinsic
+fn print(x);
+
+print(print);

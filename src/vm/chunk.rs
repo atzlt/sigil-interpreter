@@ -72,36 +72,6 @@ impl Chunk {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct ChunkReader<'a> {
-    pub chunk: &'a Chunk,
-    pub ip: usize,
-}
-
-impl<'a> ChunkReader<'a> {
-    pub fn new(chunk: &'a Chunk) -> Self {
-        Self { chunk, ip: 0 }
-    }
-
-    pub fn read(&mut self) -> u8 {
-        let byte = self.chunk.code[self.ip];
-        self.ip += 1;
-        byte
-    }
-
-    pub fn read_wide(&mut self) -> u16 {
-        let bytes = [self.chunk.code[self.ip], self.chunk.code[self.ip + 1]];
-        self.ip += 2;
-        u16::from_le_bytes(bytes)
-    }
-
-    pub fn read_i16(&mut self) -> i16 {
-        let bytes = [self.chunk.code[self.ip], self.chunk.code[self.ip + 1]];
-        self.ip += 2;
-        i16::from_le_bytes(bytes)
-    }
-}
-
 impl fmt::Display for Chunk {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use OpCode::*;

@@ -69,7 +69,7 @@ fn report_runtime_error(source: &str, err: &RuntimeError) {
     match err {
         RuntimeError::StackOverflow { span } => {
             Report::build(ReportKind::Error, span.clone())
-                .with_message(format!("stack overflow"))
+                .with_message("stack overflow".to_string())
                 .with_label(Label::new(span.clone()).with_message("stack overflow"))
                 .finish()
                 .eprint(&src)

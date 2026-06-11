@@ -1,4 +1,4 @@
-use crate::compiler::compile::Compiler;
+use crate::{compiler::compile::{Compiler, Result}, emit, emit_args};
 use ahash::AHashMap;
 use lasso::Spur;
 
@@ -106,6 +106,15 @@ impl LocalsTracker {
 impl<'a> Compiler<'a> {
     pub(super) fn declare_global(&mut self, id: Spur) -> u16 {
         self.globals.declare(id)
+    }
+
+    pub(super) fn store_global_fn(&mut self, name: Spur, id: usize) -> Result<()> {
+        let slot = self.globals.declare(name);
+        let temp = self.alloc_temp()?;
+        emit!(self.chunk_mut(), LOADFUN, temp, wide id as u16);
+        emit!(self.chunk_mut(), SETGLB, wide slot, temp);
+        self.frame_mut().regs.free_temp(temp);
+        Ok(())
     }
 
     pub(super) fn resolve_global(&self, id: Spur) -> Option<u16> {

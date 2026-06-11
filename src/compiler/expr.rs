@@ -127,6 +127,29 @@ impl<'a> Compiler<'a> {
         }
     }
 
+    // ── Intrinsic call helper ──
+
+    fn emit_intrinsic_call(
+        &mut self,
+        fun: FnLookupKey,
+        args: &[u8],
+        target: Option<u8>,
+    ) -> Result<u8> {
+        let fn_id = *self
+            .resolve_fn(&fun)
+            .ok_or_else(|| CompileError::UndefinedFunction {
+                name: fun.to_string(),
+                diag: (
+                    self.current_span().clone(),
+                    "this language item is not defined".to_string(),
+                ),
+            })?;
+        let reg = self.target_or_reuse(target, args)?;
+        self.emit_callk(reg, fn_id, 0, args);
+        self.free_other_temps(reg, args);
+        Ok(reg)
+    }
+
     // ── Bytecode emission ──
 
     fn emit_identifier(&mut self, name: Spur) -> Result<u8> {
@@ -172,113 +195,65 @@ impl<'a> Compiler<'a> {
     }
 
     fn emit_binary(&mut self, op: &Token, lhs: u8, rhs: u8, target: Option<u8>) -> Result<u8> {
-        let fun = binary_op_lang_item(op);
-        let fn_id = *self
-            .resolve_fn(&fun)
-            .ok_or_else(|| CompileError::UndefinedFunction {
-                name: fun.to_string(),
-                diag: (
-                    self.current_span().clone(),
-                    "this language item is not defined".to_string(),
-                ),
-            })?;
-        let reg = if let Some(target) = target {
-            target
-        } else {
-            self.reuse_or_alloc(&[lhs, rhs])?
-        };
-        self.emit_callk(reg, fn_id, 0, &[lhs, rhs]);
-        self.free_other_temps(reg, &[lhs, rhs]);
-        Ok(reg)
+        self.emit_intrinsic_call(binary_op_lang_item(op), &[lhs, rhs], target)
     }
 
     fn emit_unary(&mut self, fun: FnLookupKey, operand: u8, target: Option<u8>) -> Result<u8> {
-        let fn_id = *self
-            .resolve_fn(&fun)
-            .ok_or_else(|| CompileError::UndefinedFunction {
-                name: fun.to_string(),
-                diag: (
-                    self.current_span().clone(),
-                    "this language item is not defined".to_string(),
-                ),
-            })?;
-        let reg = if let Some(target) = target {
-            target
-        } else {
-            self.reuse_or_alloc(&[operand])?
-        };
-        self.emit_callk(reg, fn_id, 0, &[operand]);
-        self.free_other_temps(reg, &[operand]);
-        Ok(reg)
+        self.emit_intrinsic_call(fun, &[operand], target)
     }
 
     fn emit_ternary(&mut self, test: u8, target: Option<u8>) -> Result<u8> {
-        let test_ip = self.emit_test(test);
-        let reg = if let Some(target) = target {
-            target
-        } else {
-            self.reuse_or_alloc(&[test])?
-        };
+        let skip_then = self.emit_forward_test(test);
+        let reg = self.target_or_reuse(target, &[test])?;
         self.free_other_temps(reg, &[test]);
 
         let mhs = self.parse_precedence(0, target)?;
         self.emit_move(reg, mhs);
-        let if_end = self.emit_jmp();
+        let skip_else = self.emit_forward_jmp();
         self.free_other_temps(reg, &[mhs]);
 
+        self.place_label(skip_then);
         self.consume(&Token::Colon)?;
 
-        let else_start = self.chunk().end();
         let rhs = self.parse_precedence(PREC_TERNARY, target)?;
         self.emit_move(reg, rhs);
-        let else_end = self.chunk().end();
         self.free_other_temps(reg, &[rhs]);
 
-        self.patch_if_else(test_ip, if_end, else_start, else_end);
+        self.place_label(skip_else);
         Ok(reg)
     }
 
     fn emit_short_circuit_or(&mut self, lhs: u8, target: Option<u8>) -> Result<u8> {
-        let test_ip = self.emit_test(lhs);
-        let reg = if let Some(target) = target {
-            target
-        } else {
-            self.reuse_or_alloc(&[lhs])?
-        };
+        let skip_rhs = self.emit_forward_test(lhs);
+        let reg = self.target_or_reuse(target, &[lhs])?;
         self.free_other_temps(reg, &[lhs]);
 
         self.emit_move(reg, lhs);
-        let if_end = self.emit_jmp();
+        let skip_end = self.emit_forward_jmp();
 
-        let else_start = self.chunk().end();
+        self.place_label(skip_rhs);
         let rhs = self.parse_precedence(PREC_OR + 1, target)?;
         self.emit_move(reg, rhs);
-        let else_end = self.chunk().end();
         self.free_other_temps(reg, &[rhs]);
 
-        self.patch_if_else(test_ip, if_end, else_start, else_end);
+        self.place_label(skip_end);
         Ok(reg)
     }
 
     fn emit_short_circuit_and(&mut self, lhs: u8, target: Option<u8>) -> Result<u8> {
-        let test_ip = self.emit_test(lhs);
-        let reg = if let Some(target) = target {
-            target
-        } else {
-            self.reuse_or_alloc(&[lhs])?
-        };
+        let skip_rhs = self.emit_forward_test(lhs);
+        let reg = self.target_or_reuse(target, &[lhs])?;
         self.free_other_temps(reg, &[lhs]);
 
         let rhs = self.parse_precedence(PREC_AND + 1, target)?;
         self.emit_move(reg, rhs);
-        let if_end = self.emit_jmp();
+        let skip_end = self.emit_forward_jmp();
 
-        let else_start = self.chunk().end();
+        self.place_label(skip_rhs);
         self.emit_move(reg, lhs);
-        let else_end = self.chunk().end();
         self.free_other_temps(reg, &[rhs]);
 
-        self.patch_if_else(test_ip, if_end, else_start, else_end);
+        self.place_label(skip_end);
         Ok(reg)
     }
 
@@ -302,11 +277,7 @@ impl<'a> Compiler<'a> {
                     "expect argument list to close here".to_string(),
                 ),
             })?;
-        let dst = if let Some(target) = target {
-            target
-        } else {
-            self.reuse_or_alloc(&[lhs])?
-        };
+        let dst = self.target_or_reuse(target, &[lhs])?;
         self.emit_call(dst, lhs, self.reg_watermark(), &args);
         Ok(dst)
     }

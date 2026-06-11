@@ -6,6 +6,7 @@ use thiserror::Error;
 
 use crate::{
     compiler::{
+        label::{Label, LabelTracker, RefKind},
         lexer::Token,
         loop_tracker::LoopTracker,
         register::RegisterTracker,
@@ -256,6 +257,10 @@ impl Compiler<'_> {
         self.lexer.extras.interner.resolve(spur)
     }
 
+    pub(super) fn spur_eq(&mut self, spur: Spur, text: &str) -> bool {
+        spur == self.lexer.extras.interner.get_or_intern(text)
+    }
+
     pub(super) fn record_locus(&mut self) {
         let span = self.current_span().clone();
         self.chunk_mut().record_locus(span);
@@ -297,6 +302,14 @@ impl Compiler<'_> {
         }
     }
 
+    pub(super) fn target_or_reuse(&mut self, target: Option<u8>, sources: &[u8]) -> Result<u8> {
+        if let Some(t) = target {
+            Ok(t)
+        } else {
+            self.reuse_or_alloc(sources)
+        }
+    }
+
     pub(super) fn emit_callk(&mut self, dst: u8, fn_slot: usize, frame_offset: u8, args: &[u8]) {
         let argc = args.len();
         emit!(self.chunk_mut(), CALLK, dst, wide fn_slot as u16, frame_offset, argc);
@@ -309,39 +322,54 @@ impl Compiler<'_> {
         self.chunk_mut().append(args);
     }
 
-    pub(super) fn emit_test(&mut self, lhs: u8) -> usize {
-        let ip = self.chunk_mut().end();
-        emit!(self.chunk_mut(), TEST, lhs, wide 0);
-        ip
+    pub(super) fn new_label(&mut self) -> Label {
+        self.frame_mut().labels.alloc()
     }
 
-    pub(super) fn emit_jmp(&mut self) -> usize {
-        let ip = self.chunk_mut().end();
+    pub(super) fn emit_forward_test(&mut self, reg: u8) -> Label {
+        let label = self.frame_mut().labels.alloc();
+        let ip = self.chunk().end();
+        emit!(self.chunk_mut(), TEST, reg, wide 0);
+        self.frame_mut().labels.add_ref(label, ip, RefKind::Test);
+        label
+    }
+
+    pub(super) fn emit_forward_jmp(&mut self) -> Label {
+        let label = self.frame_mut().labels.alloc();
+        let ip = self.chunk().end();
         emit!(self.chunk_mut(), JMP, wide 0);
-        ip
+        self.frame_mut().labels.add_ref(label, ip, RefKind::Jmp);
+        label
     }
 
-    pub(super) fn emit_jump_offset(&mut self, offset: isize) {
-        let offset = (offset as i16).to_le_bytes();
-        emit!(self.chunk_mut(), JMP, offset[0], offset[1]);
+    pub(super) fn emit_forward_jmp_to(&mut self, label: Label) {
+        let ip = self.chunk().end();
+        emit!(self.chunk_mut(), JMP, wide 0);
+        self.frame_mut().labels.add_ref(label, ip, RefKind::Jmp);
     }
 
-    pub(super) fn patch_if(&mut self, test_ip: usize, if_end: usize) {
-        self.chunk_mut()
-            .patch_wide(test_ip + 2, (if_end - test_ip) as u16);
+    pub(super) fn emit_here_label(&mut self) -> Label {
+        let label = self.frame_mut().labels.alloc();
+        let ip = self.chunk().end();
+        let chunk_idx = self.frame().chunk_idx;
+        let labels = &mut self.frames.last_mut().unwrap().labels;
+        labels.resolve(label, ip, &mut self.chunks[chunk_idx]);
+        label
     }
 
-    pub(super) fn patch_if_else(
-        &mut self,
-        test_ip: usize,
-        if_end: usize,
-        else_start: usize,
-        else_end: usize,
-    ) {
-        self.chunk_mut()
-            .patch_wide(if_end + 1, (else_end - if_end) as u16);
-        self.chunk_mut()
-            .patch_wide(test_ip + 2, (else_start - test_ip) as u16);
+    pub(super) fn emit_jmp_to(&mut self, label: Label) {
+        let target = self.frame().labels.ip_of(label);
+        let ip = self.chunk().end();
+        let offset = target as isize - ip as isize;
+        let bytes = (offset as i16).to_le_bytes();
+        emit!(self.chunk_mut(), JMP, bytes[0], bytes[1]);
+    }
+
+    pub(super) fn place_label(&mut self, label: Label) {
+        let target_ip = self.chunk().end();
+        let chunk_idx = self.frame().chunk_idx;
+        let labels = &mut self.frames.last_mut().unwrap().labels;
+        labels.resolve(label, target_ip, &mut self.chunks[chunk_idx]);
     }
 
     /// Returns the chunk index.
@@ -372,6 +400,7 @@ pub(super) struct CompilerFrame {
     pub(super) regs: RegisterTracker,
     pub(super) locals: LocalsTracker,
     pub(super) loops: LoopTracker,
+    pub(super) labels: LabelTracker,
     chunk_idx: usize,
 }
 
@@ -381,6 +410,7 @@ impl CompilerFrame {
             regs: RegisterTracker::new_with(256, args.len()),
             locals: LocalsTracker::new_with(args),
             loops: LoopTracker::new(),
+            labels: LabelTracker::default(),
             chunk_idx,
         }
     }

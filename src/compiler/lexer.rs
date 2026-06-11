@@ -111,6 +111,8 @@ pub enum Token {
     Colon,
     #[token("->")]
     Arrow,
+    #[token("@")]
+    At,
     // TODO: add more operators as language design settles
 
     // ── Delimiters ────
@@ -176,6 +178,7 @@ impl fmt::Display for Token {
             Token::Comma => write!(f, ","),
             Token::Colon => write!(f, ":"),
             Token::Arrow => write!(f, "->"),
+            Token::At => write!(f, "@"),
             // Delimiters
             Token::LParen => write!(f, "("),
             Token::RParen => write!(f, ")"),

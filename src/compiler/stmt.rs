@@ -6,7 +6,7 @@ use crate::{
         lexer::Token,
     },
     emit, emit_args,
-    functions::FnLookupKey,
+    functions::{FnLookupKey, FnModifier, LangItem},
 };
 
 type Identifier = Spur;
@@ -22,7 +22,15 @@ impl<'a> Compiler<'a> {
         self.record_locus();
         match self.current() {
             Token::Let => self.parse_let_decl(),
-            Token::Fn => self.parse_fn_decl(),
+            Token::Fn => self.parse_fn_decl(Vec::new()),
+            Token::At => {
+                let mut modifiers = Vec::new();
+                while self.current() == Token::At {
+                    self.consume(&Token::At)?;
+                    modifiers.push(self.parse_modifier()?);
+                }
+                self.parse_fn_decl(modifiers)
+            }
             Token::Return => self.parse_return_stmt(),
             Token::Break => self.parse_jump(JumpKind::Break),
             Token::Continue => self.parse_jump(JumpKind::Continue),
@@ -89,7 +97,7 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn parse_fn_decl(&mut self) -> Result<()> {
+    fn parse_fn_decl(&mut self, modifiers: Vec<FnModifier>) -> Result<()> {
         self.consume(&Token::Fn)?;
         let name = if let Token::Identifier(spur) = self.current() {
             let name = spur;
@@ -106,24 +114,120 @@ impl<'a> Compiler<'a> {
         };
         let args = self.parse_arglist()?;
 
-        let chunk_idx = self.chunks.len();
+        let is_intrinsic = modifiers.iter().any(|m| matches!(m, FnModifier::Intrinsic));
+        let lang_item = modifiers.iter().find_map(|m| match m {
+            FnModifier::LangItem(item) => Some(*item),
+            _ => None,
+        });
+
         if self.is_top_level() {
-            let id = self.funcs.register(FnLookupKey::Name(name), chunk_idx);
-            let slot = self.globals.declare(name);
-            let temp = self.alloc_temp()?;
-            emit!(self.chunk_mut(), LOADFUN, temp, wide id as u16);
-            emit!(self.chunk_mut(), SETGLB, wide slot, temp);
-            self.frame_mut().regs.free_temp(temp);
+            let id = if is_intrinsic {
+                let name_str = self.intern_resolve(&name);
+                self.funcs
+                    .get_id(&FnLookupKey::Name(name))
+                    .or_else(|| {
+                        self.funcs
+                            .get_id(&FnLookupKey::External(name_str.to_string()))
+                    })
+                    .copied()
+                    .ok_or_else(|| CompileError::UndefinedFunction {
+                        name: name_str.to_string(),
+                        diag: (
+                            self.current_span().clone(),
+                            "intrinsic function not provided by runtime".to_string(),
+                        ),
+                    })?
+            } else {
+                let chunk_idx = self.chunks.len();
+                if let Some(item) = lang_item {
+                    self.funcs
+                        .register(FnLookupKey::LangItem(item), chunk_idx);
+                }
+                self.funcs.register(FnLookupKey::Name(name), chunk_idx)
+            };
+            self.store_global_fn(name, id)?;
         } else {
             unimplemented!("Nested function declaration is not supported yet")
         }
 
-        self.new_frame(&args);
-        self.parse_block()?;
-        self.emit_safety_net()?;
-        self.exit_frame()?;
+        if is_intrinsic {
+            self.consume(&Token::Semicolon)?;
+        } else {
+            self.new_frame(&args);
+            self.parse_block()?;
+            self.emit_safety_net()?;
+            self.exit_frame()?;
+        }
 
         Ok(())
+    }
+
+    fn parse_modifier(&mut self) -> Result<FnModifier> {
+        let spur = if let Token::Identifier(spur) = self.current() {
+            self.advance()?;
+            spur
+        } else {
+            return Err(CompileError::Unexpected {
+                token: self.current(),
+                diag: (
+                    self.current_span().clone(),
+                    "expected modifier name after @".to_string(),
+                ),
+            });
+        };
+        if self.spur_eq(spur, "intrinsic") {
+            Ok(FnModifier::Intrinsic)
+        } else if self.spur_eq(spur, "lang-item") {
+            self.consume(&Token::LParen).map_err(|_| {
+                CompileError::Unexpected {
+                    token: self.current(),
+                    diag: (
+                        self.current_span().clone(),
+                        "expected '(' after @lang-item".to_string(),
+                    ),
+                }
+            })?;
+            let item_spur = if let Token::Identifier(spur) = self.current() {
+                self.advance()?;
+                spur
+            } else {
+                return Err(CompileError::Unexpected {
+                    token: self.current(),
+                    diag: (
+                        self.current_span().clone(),
+                        "expected lang item name".to_string(),
+                    ),
+                });
+            };
+            let item_name = self.intern_resolve(&item_spur);
+            let lang_item =
+                LangItem::from_name(item_name).ok_or_else(|| CompileError::Unexpected {
+                    token: self.current(),
+                    diag: (
+                        self.current_span().clone(),
+                        format!("unknown lang item: {item_name}"),
+                    ),
+                })?;
+            self.consume(&Token::RParen).map_err(|_| {
+                CompileError::Unexpected {
+                    token: self.current(),
+                    diag: (
+                        self.current_span().clone(),
+                        "expected ')' after @lang-item".to_string(),
+                    ),
+                }
+            })?;
+            Ok(FnModifier::LangItem(lang_item))
+        } else {
+            let name = self.intern_resolve(&spur);
+            Err(CompileError::Unexpected {
+                token: Token::Other,
+                diag: (
+                    self.current_span().clone(),
+                    format!("unknown modifier: @{name}"),
+                ),
+            })
+        }
     }
 
     fn parse_assign(&mut self, id: Identifier) -> Result<()> {
@@ -172,15 +276,13 @@ impl<'a> Compiler<'a> {
     fn parse_if(&mut self) -> Result<()> {
         self.consume(&Token::If)?;
         let test = self.expression(None)?;
-        let test_ip = self.chunk().end();
-        self.emit_test(test);
+        let skip_then = self.emit_forward_test(test);
         self.frame_mut().regs.free_temp(test);
         self.parse_block()?;
-        let if_end = self.chunk().end();
 
         if self.matches(&Token::Else)? {
-            let if_end = self.emit_jmp();
-            let else_start = self.chunk().end();
+            let skip_else = self.emit_forward_jmp();
+            self.place_label(skip_then);
             if self.check(&Token::If) {
                 self.parse_if()?;
             } else if self.check(&Token::LBrace) {
@@ -197,10 +299,9 @@ impl<'a> Compiler<'a> {
                     ),
                 });
             }
-            let else_end = self.chunk().end();
-            self.patch_if_else(test_ip, if_end, else_start, else_end);
+            self.place_label(skip_else);
         } else {
-            self.patch_if(test_ip, if_end);
+            self.place_label(skip_then);
         }
 
         Ok(())
@@ -218,10 +319,13 @@ impl<'a> Compiler<'a> {
                 diag: (self.prev_span().clone(), format!("{token} outside loop")),
             });
         }
-        let jmp_ip = self.emit_jmp();
+        let label = match kind {
+            JumpKind::Break => self.frame().loops.break_label(),
+            JumpKind::Continue => self.frame().loops.continue_label(),
+        };
         match kind {
-            JumpKind::Break => self.frame_mut().loops.add_break(jmp_ip),
-            JumpKind::Continue => self.frame_mut().loops.add_continue(jmp_ip),
+            JumpKind::Break => self.emit_forward_jmp_to(label),
+            JumpKind::Continue => self.emit_jmp_to(label),
         }
         self.consume(&Token::Semicolon)?;
         Ok(())
@@ -229,28 +333,17 @@ impl<'a> Compiler<'a> {
 
     fn parse_while(&mut self) -> Result<()> {
         self.consume(&Token::While)?;
-        let test_start = self.chunk().end();
-        self.frame_mut().loops.push_loop(test_start);
+        let cond = self.emit_here_label();
         let test = self.expression(None)?;
-        let test_ip = self.emit_test(test);
+        let end = self.new_label();
+        let skip = self.emit_forward_test(test);
         self.frame_mut().regs.free_temp(test);
+        self.frame_mut().loops.push_loop(end, cond);
         self.parse_block()?;
-        let body_end = self.chunk().end();
-        let offset = test_start as isize - body_end as isize;
-        self.emit_jump_offset(offset);
-        let while_end = self.chunk().end();
-        let patch = self.frame_mut().loops.pop_loop();
-
-        for &jmp_ip in &patch.breaks {
-            self.chunk_mut()
-                .patch_jmp(jmp_ip, while_end as isize - jmp_ip as isize);
-        }
-        for &jmp_ip in &patch.continues {
-            self.chunk_mut()
-                .patch_jmp(jmp_ip, patch.cond_start as isize - jmp_ip as isize);
-        }
-
-        self.patch_if(test_ip, while_end);
+        self.frame_mut().loops.pop_loop();
+        self.emit_jmp_to(cond);
+        self.place_label(end);
+        self.place_label(skip);
         Ok(())
     }
 }

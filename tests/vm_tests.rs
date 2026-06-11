@@ -30,7 +30,7 @@ fn test_loadk_and_move() {
     chunk.emit(2);
 
     let mut vm = VM::default();
-    let result = vm.run(&[chunk], &FunctionRegistry::new()).unwrap();
+    let result = vm.run(&[chunk], &FunctionRegistry::default()).unwrap();
     assert_eq!(result, Value::Number(42.0));
 }
 
@@ -49,7 +49,7 @@ fn test_bool_and_nil() {
     chunk.emit(0);
 
     let mut vm = VM::default();
-    let result = vm.run(&[chunk], &FunctionRegistry::new()).unwrap();
+    let result = vm.run(&[chunk], &FunctionRegistry::default()).unwrap();
     assert_eq!(result, Value::Bool(true));
 }
 
@@ -76,7 +76,7 @@ fn test_jmp() {
     chunk.emit(1);
 
     let mut vm = VM::default();
-    let result = vm.run(&[chunk], &FunctionRegistry::new()).unwrap();
+    let result = vm.run(&[chunk], &FunctionRegistry::default()).unwrap();
     assert_eq!(
         result,
         Value::Number(10.0),
@@ -105,7 +105,7 @@ fn test_test_true() {
     chunk.emit(1);
 
     let mut vm = VM::default();
-    let result = vm.run(&[chunk], &FunctionRegistry::new()).unwrap();
+    let result = vm.run(&[chunk], &FunctionRegistry::default()).unwrap();
     assert_eq!(
         result,
         Value::Number(99.0),
@@ -141,7 +141,7 @@ fn test_test_false() {
     chunk.emit(2);
 
     let mut vm = VM::default();
-    let result = vm.run(&[chunk], &FunctionRegistry::new()).unwrap();
+    let result = vm.run(&[chunk], &FunctionRegistry::default()).unwrap();
     assert_eq!(
         result,
         Value::Number(10.0),
