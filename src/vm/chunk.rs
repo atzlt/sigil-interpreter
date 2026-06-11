@@ -6,7 +6,6 @@ use crate::{constant::ConstantPool, value::Value, vm::OpCode};
 pub struct Chunk {
     pub code: Vec<u8>,
     pub constants: ConstantPool,
-    pub ip: usize,
     pub locus: Vec<(usize, Range<usize>)>,
 }
 
@@ -15,27 +14,8 @@ impl Chunk {
         Chunk {
             code: Vec::new(),
             constants: ConstantPool::new(),
-            ip: 0,
             locus: Vec::new(),
         }
-    }
-
-    pub fn read(&mut self) -> u8 {
-        let byte = self.code[self.ip];
-        self.ip += 1;
-        byte
-    }
-
-    pub fn read_wide(&mut self) -> u16 {
-        let bytes = [self.code[self.ip], self.code[self.ip + 1]];
-        self.ip += 2;
-        u16::from_le_bytes(bytes)
-    }
-
-    pub fn read_i16(&mut self) -> i16 {
-        let bytes = [self.code[self.ip], self.code[self.ip + 1]];
-        self.ip += 2;
-        i16::from_le_bytes(bytes)
     }
 
     pub fn append(&mut self, bytes: &[u8]) {
@@ -70,10 +50,6 @@ impl Chunk {
         self.constants.intern(value)
     }
 
-    pub fn reset_ip(&mut self) {
-        self.ip = 0;
-    }
-
     pub fn last(&self) -> usize {
         self.code.len() - 1
     }
@@ -93,6 +69,36 @@ impl Chunk {
     pub fn locus_at(&self, ip: usize) -> Option<&Range<usize>> {
         let idx = self.locus.partition_point(|(pos, _)| *pos <= ip);
         idx.checked_sub(1).map(|i| &self.locus[i].1)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ChunkReader<'a> {
+    pub chunk: &'a Chunk,
+    pub ip: usize,
+}
+
+impl<'a> ChunkReader<'a> {
+    pub fn new(chunk: &'a Chunk) -> Self {
+        Self { chunk, ip: 0 }
+    }
+
+    pub fn read(&mut self) -> u8 {
+        let byte = self.chunk.code[self.ip];
+        self.ip += 1;
+        byte
+    }
+
+    pub fn read_wide(&mut self) -> u16 {
+        let bytes = [self.chunk.code[self.ip], self.chunk.code[self.ip + 1]];
+        self.ip += 2;
+        u16::from_le_bytes(bytes)
+    }
+
+    pub fn read_i16(&mut self) -> i16 {
+        let bytes = [self.chunk.code[self.ip], self.chunk.code[self.ip + 1]];
+        self.ip += 2;
+        i16::from_le_bytes(bytes)
     }
 }
 

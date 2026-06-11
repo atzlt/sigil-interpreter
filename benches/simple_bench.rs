@@ -4,9 +4,9 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use sigil_interpreter::{compiler::compile::compile_program, vm::VM};
 
 fn compile_and_run(source: &str) {
-    let mut chunk = compile_program(source).unwrap();
+    let compiled = compile_program(source).unwrap();
     let mut vm = VM::default();
-    vm.run(&mut chunk).unwrap();
+    vm.run(&compiled.0, &compiled.1).unwrap();
 }
 
 fn bench_expr_long_chain(c: &mut Criterion) {

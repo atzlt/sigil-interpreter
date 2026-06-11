@@ -113,7 +113,7 @@ fn main() {
         }
     };
 
-    let mut compiled = match compile_program(&source) {
+    let compiled = match compile_program(&source) {
         Ok(c) => c,
         Err(e) => {
             report_compile_error(&source, &e);
@@ -122,7 +122,7 @@ fn main() {
     };
 
     let mut vm = VM::default();
-    match vm.run(&mut compiled.0, &compiled.1) {
+    match vm.run(&compiled.0, &compiled.1) {
         Ok(val) => {
             if val != Value::Nil {
                 println!("{val}");

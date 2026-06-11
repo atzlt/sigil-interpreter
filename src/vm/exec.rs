@@ -21,23 +21,23 @@ pub enum RuntimeError {
     IpOutOfBounds { ip: usize, span: Range<usize> },
 }
 
-fn locus_span(chunk: &Chunk) -> Range<usize> {
-    chunk.locus_at(chunk.ip).cloned().unwrap_or(0..0)
+fn locus_span(chunk: &Chunk, ip: usize) -> Range<usize> {
+    chunk.locus_at(ip).cloned().unwrap_or(0..0)
 }
 
 #[derive(Debug)]
-pub struct VM {
-    pub(super) frames: Frames,
+pub struct VM<'c> {
+    pub(super) frames: Frames<'c>,
     globals: Vec<Value>,
 }
 
-impl Default for VM {
+impl Default for VM<'_> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl VM {
+impl<'c> VM<'c> {
     pub fn new() -> Self {
         Self {
             frames: Frames::new(),
@@ -52,70 +52,58 @@ impl VM {
     }
 
     pub fn run(
-        &mut self,
-        chunk: &mut [Chunk],
+        &'c mut self,
+        chunks: &'c [Chunk],
         registry: &FunctionRegistry,
     ) -> Result<Value, RuntimeError> {
         use OpCode::*;
 
-        macro_rules! chunk {
-            () => {
-                chunk[self.chunk_idx()]
-            };
-        }
-
-        chunk!().reset_ip();
+        self.frames.init_main(&chunks[0]);
         loop {
-            if chunk!().ip >= chunk!().code.len() {
-                return Err(RuntimeError::IpOutOfBounds {
-                    ip: chunk!().ip,
-                    span: locus_span(&chunk!()),
-                });
-            }
-            let op_byte = chunk!().read();
+            let op_byte = self.read();
             let op = OpCode::from_repr(op_byte).expect("Unrecognized opcode");
             match op {
                 MOVE => {
-                    let dst = chunk!().read() as usize;
-                    let src = chunk!().read() as usize;
+                    let dst = self.read() as usize;
+                    let src = self.read() as usize;
                     self.stack_mut()[dst] = self.stack()[src].clone();
                 }
                 LOADK => {
-                    let dst = chunk!().read() as usize;
-                    let k = chunk!().read_wide() as usize;
-                    self.stack_mut()[dst] = chunk!().constants.get(k as u16).clone();
+                    let dst = self.read() as usize;
+                    let k = self.read_wide() as usize;
+                    self.stack_mut()[dst] = self.chunk().constants.get(k as u16).clone();
                 }
                 LOADBOOL => {
-                    let dst = chunk!().read() as usize;
-                    let val = chunk!().read() != 0;
+                    let dst = self.read() as usize;
+                    let val = self.read() != 0;
                     self.stack_mut()[dst] = Value::Bool(val);
                 }
                 LOADNIL => {
-                    let dst = chunk!().read() as usize;
+                    let dst = self.read() as usize;
                     self.stack_mut()[dst] = Value::Nil;
                 }
                 LOADFUN => {
-                    let dst = chunk!().read() as usize;
-                    let fun = chunk!().read_wide() as usize;
+                    let dst = self.read() as usize;
+                    let fun = self.read_wide() as usize;
                     self.stack_mut()[dst] = Value::Fn(fun);
                 }
                 GETGLB => {
-                    let dst = chunk!().read() as usize;
-                    let slot = chunk!().read_wide() as usize;
+                    let dst = self.read() as usize;
+                    let slot = self.read_wide() as usize;
                     self.ensure_global(slot);
                     self.stack_mut()[dst] = self.globals[slot].clone();
                 }
                 SETGLB => {
-                    let slot = chunk!().read_wide() as usize;
-                    let src = chunk!().read() as usize;
+                    let slot = self.read_wide() as usize;
+                    let src = self.read() as usize;
                     self.ensure_global(slot);
                     self.globals[slot] = self.stack()[src].clone();
                 }
                 CALL => {
-                    let dst: usize = chunk!().read() as usize;
-                    let reg = chunk!().read() as usize;
-                    let offset = chunk!().read() as usize;
-                    let argc = chunk!().read() as usize;
+                    let dst: usize = self.read() as usize;
+                    let reg = self.read() as usize;
+                    let offset = self.read() as usize;
+                    let argc = self.read() as usize;
 
                     let reg = &self.stack()[reg];
                     let fn_id = match reg {
@@ -123,60 +111,58 @@ impl VM {
                         _ => {
                             return Err(RuntimeError::UndefinedFunction {
                                 name: "this variable is not callable".into(),
-                                span: locus_span(&chunk!()),
+                                span: locus_span(self.chunk(), self.ip()),
                             });
                         }
                     };
 
-                    self.handle_call(chunk, registry, fn_id, argc, dst, offset)?;
+                    self.handle_call(chunks, registry, fn_id, argc, dst, offset)?;
                 }
                 CALLK => {
-                    let dst: usize = chunk!().read() as usize;
-                    let fn_id = chunk!().read_wide() as usize;
-                    let offset = chunk!().read() as usize;
-                    let argc = chunk!().read() as usize;
+                    let dst: usize = self.read() as usize;
+                    let fn_id = self.read_wide() as usize;
+                    let offset = self.read() as usize;
+                    let argc = self.read() as usize;
 
-                    self.handle_call(chunk, registry, fn_id, argc, dst, offset)?;
+                    self.handle_call(chunks, registry, fn_id, argc, dst, offset)?;
                 }
                 RETURN => {
-                    let reg = chunk!().read() as usize;
+                    let reg = self.read() as usize;
                     let from_top_level = self.exit_frame(reg);
                     if let Some(ret) = from_top_level {
                         return Ok(ret);
                     }
                 }
                 JMP => {
-                    let ip = chunk!().ip as isize - 1;
-                    let offset = chunk!().read_i16();
+                    let ip = self.ip() as isize - 1;
+                    let offset = self.read_i16();
                     let new_ip = ip + offset as isize;
-                    if new_ip < 0 || new_ip as usize >= chunk!().code.len() {
+                    if new_ip < 0 || new_ip as usize >= self.chunk().code.len() {
                         return Err(RuntimeError::IpOutOfBounds {
-                            ip: chunk!().ip,
-                            span: locus_span(&chunk!()),
+                            ip: self.ip(),
+                            span: locus_span(self.chunk(), self.ip()),
                         });
                     }
-                    chunk!().ip = new_ip as usize;
+                    self.set_ip(new_ip as usize);
                 }
                 TEST => {
-                    let ip = chunk!().ip as isize - 1;
-                    let reg = chunk!().read() as usize;
-                    let offset = chunk!().read_i16();
+                    let ip = self.ip() as isize - 1;
+                    let reg = self.read() as usize;
+                    let offset = self.read_i16();
                     if !self.stack()[reg].is_truthy() {
                         let new_ip = ip + offset as isize;
-                        if new_ip < 0 || new_ip as usize >= chunk!().code.len() {
+                        if new_ip < 0 || new_ip as usize >= self.chunk().code.len() {
                             return Err(RuntimeError::IpOutOfBounds {
-                                ip: chunk!().ip,
-                                span: locus_span(&chunk!()),
+                                ip: self.ip(),
+                                span: locus_span(self.chunk(), self.ip()),
                             });
                         }
-                        chunk!().ip = new_ip as usize;
+                        self.set_ip(new_ip as usize);
                     }
                 }
                 CLOSURE | NEWSTRUCT => {
-                    return Err(RuntimeError::InvalidOpCode {
-                        op_byte,
-                        span: locus_span(&chunk!()),
-                    });
+                    let span = locus_span(self.chunk(), self.ip());
+                    return Err(RuntimeError::InvalidOpCode { op_byte, span });
                 }
             }
         }
@@ -184,32 +170,31 @@ impl VM {
 
     fn handle_call(
         &mut self,
-        chunk: &mut [Chunk],
+        chunks: &'c [Chunk],
         registry: &FunctionRegistry,
         fn_id: usize,
         argc: usize,
         dst: usize,
         offset: usize,
     ) -> Result<(), RuntimeError> {
-        macro_rules! chunk {
-            () => {
-                chunk[self.chunk_idx()]
-            };
-        }
         let func = registry
             .get(&fn_id)
             .ok_or_else(|| RuntimeError::UndefinedFunction {
                 name: format!("{}", registry.resolve_id(fn_id)),
-                span: locus_span(&chunk!()),
+                span: locus_span(self.chunk(), self.ip()),
             })?;
+        let mut regs: SmallVec<[_; 8]> = SmallVec::with_capacity(argc);
+        for _ in 0..argc {
+            let arg = self.read();
+            regs.push(arg as usize);
+        }
 
         match func {
             FnEntry::Intrinsic(func) => {
-                let window = &self.stack();
                 let mut args: SmallVec<[_; 8]> = SmallVec::with_capacity(argc);
-                for _ in 0..argc {
-                    let val_ref = &window[chunk!().read() as usize];
-                    args.push(val_ref);
+
+                for i in 0..argc {
+                    args.push(self.stack_index(regs[i]));
                 }
 
                 let result = func(&args);
@@ -217,13 +202,11 @@ impl VM {
                 self.stack_mut()[dst] = result;
             }
             FnEntry::ChunkIdx(chunk_idx) => {
-                let chunk_idx = chunk_idx;
-                for i in 1..=argc {
-                    let window = &self.stack();
-                    self.stack_mut()[offset + i] = window[chunk!().read() as usize].clone();
+                let chunk = &chunks[*chunk_idx];
+                for i in 0..argc {
+                    self.stack_mut()[offset + i + 1] = self.stack_index(regs[i]).clone();
                 }
-                chunk[*chunk_idx].reset_ip();
-                self.enter_frame(*chunk_idx, dst, offset);
+                self.enter_frame(chunk, dst, offset);
             }
         }
         Ok(())

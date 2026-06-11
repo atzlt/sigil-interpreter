@@ -15,17 +15,17 @@ fn print_chunks(chunks: &[Chunk]) {
 }
 
 pub fn run_program(source: &str) -> Value {
-    let mut compiled = compile_program(source).unwrap();
+    let compiled = compile_program(source).unwrap();
     print_chunks(&compiled.0);
     let mut vm = VM::default();
-    vm.run(&mut compiled.0, &compiled.1).unwrap()
+    vm.run(&compiled.0, &compiled.1).unwrap()
 }
 
 pub fn run_expr(source: &str) -> Value {
-    let mut compiled = compile_expr(source).unwrap();
+    let compiled = compile_expr(source).unwrap();
     print_chunks(&compiled.0);
     let mut vm = VM::default();
-    vm.run(&mut compiled.0, &compiled.1).unwrap()
+    vm.run(&compiled.0, &compiled.1).unwrap()
 }
 
 pub fn compile_err(source: &str) -> CompileError {

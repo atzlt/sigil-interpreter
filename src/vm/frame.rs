@@ -1,37 +1,69 @@
 use std::ops::{Index, IndexMut};
 
-use crate::{value::Value, vm::VM};
+use crate::{
+    value::Value,
+    vm::{Chunk, ChunkReader, VM},
+};
 
 const MAX_CALL_DEPTH: usize = 256;
 
 #[derive(Debug)]
-pub(super) struct Frames {
+pub(super) struct Frames<'c> {
     stack: Vec<Value>,
-    frames: Vec<CallFrame>,
+    frames: Vec<CallFrame<'c>>,
 }
 
-impl Default for Frames {
+impl Default for Frames<'_> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Frames {
+impl<'c> Frames<'c> {
     pub fn new() -> Self {
         Self {
             stack: vec![const { Value::Nil }; 256 * MAX_CALL_DEPTH],
-            frames: vec![CallFrame::new(0, 0, 0)],
+            frames: Vec::new(),
         }
     }
 
-    fn frame(&self) -> &CallFrame {
+    fn frame(&self) -> &CallFrame<'_> {
         self.frames.last().unwrap()
     }
 
-    fn new_frame(&mut self, chunk_idx: usize, ret_dst: usize, reg_offset: usize) {
+    pub(super) fn read(&mut self) -> u8 {
+        self.frames.last_mut().unwrap().reader.read()
+    }
+
+    pub(super) fn read_i16(&mut self) -> i16 {
+        self.frames.last_mut().unwrap().reader.read_i16()
+    }
+
+    pub(super) fn read_wide(&mut self) -> u16 {
+        self.frames.last_mut().unwrap().reader.read_wide()
+    }
+
+    pub(super) fn ip(&self) -> usize {
+        self.frames.last().unwrap().reader.ip
+    }
+
+    pub(super) fn set_ip(&mut self, new: usize) {
+        self.frames.last_mut().unwrap().reader.ip = new
+    }
+
+    fn new_frame(&mut self, chunk: &'c Chunk, ret_dst: usize, reg_offset: usize) {
         let cur_offset = self.frame().reg_offset;
-        let frame = CallFrame::new(chunk_idx, cur_offset + ret_dst, cur_offset + reg_offset + 1);
+        let frame = CallFrame::new(
+            cur_offset + ret_dst,
+            cur_offset + reg_offset + 1,
+            ChunkReader::new(chunk),
+        );
         self.frames.push(frame);
+    }
+
+    pub fn init_main(&mut self, chunk: &'c Chunk) {
+        self.frames
+            .push(CallFrame::new(0, 0, ChunkReader::new(chunk)));
     }
 
     /// Returns `true` if we have exited the top-level frame, hence exiting the whole program.
@@ -42,17 +74,18 @@ impl Frames {
     }
 }
 
-impl VM {
-    fn frame(&self) -> &CallFrame {
+impl<'c> VM<'c> {
+    fn frame(&self) -> &CallFrame<'_> {
         self.frames.frame()
     }
 
-    pub(super) fn chunk_idx(&self) -> usize {
-        self.frame().chunk_idx
-    }
-
-    pub(super) fn enter_frame(&mut self, chunk_idx: usize, ret_dst: usize, reg_offset: usize) {
-        self.frames.new_frame(chunk_idx, ret_dst, reg_offset);
+    pub(super) fn enter_frame(
+        &mut self,
+        chunk: &'c Chunk,
+        ret_dst: usize,
+        reg_offset: usize,
+    ) {
+        self.frames.new_frame(chunk, ret_dst, reg_offset);
     }
 
     /// Returns `Some(return_value)` if we have exited the top-level frame, hence exiting the whole program.
@@ -76,22 +109,51 @@ impl VM {
         let offset = self.frame().reg_offset;
         StackWindowMut::new(&mut self.frames.stack, offset)
     }
+
+    pub(super) fn stack_index(&self, idx: usize) -> &Value {
+        let offset = self.frames.frames.last().unwrap().reg_offset;
+        &self.frames.stack[offset + idx]
+    }
+
+    pub(super) fn read(&mut self) -> u8 {
+        self.frames.read()
+    }
+
+    pub(super) fn read_i16(&mut self) -> i16 {
+        self.frames.read_i16()
+    }
+
+    pub(super) fn read_wide(&mut self) -> u16 {
+        self.frames.read_wide()
+    }
+
+    pub(super) fn ip(&self) -> usize {
+        self.frames.ip()
+    }
+
+    pub(super) fn set_ip(&mut self, new: usize) {
+        self.frames.set_ip(new);
+    }
+
+    pub(super) fn chunk(&self) -> &Chunk {
+        self.frames.frames.last().unwrap().reader.chunk
+    }
 }
 
 /// The `ret_dst` and `reg_offset` in this struct is _absolute_.
 #[derive(Debug)]
-struct CallFrame {
-    chunk_idx: usize,
+struct CallFrame<'c> {
     ret_dst: usize,
     reg_offset: usize,
+    reader: ChunkReader<'c>,
 }
 
-impl CallFrame {
-    fn new(chunk_idx: usize, ret_dst: usize, reg_offset: usize) -> Self {
+impl<'c> CallFrame<'c> {
+    fn new(ret_dst: usize, reg_offset: usize, reader: ChunkReader<'c>) -> Self {
         Self {
-            chunk_idx,
             ret_dst,
             reg_offset,
+            reader,
         }
     }
 }
