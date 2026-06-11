@@ -1,5 +1,7 @@
 use sigil_interpreter::{
-    functions::FunctionRegistry, value::Value, vm::{Chunk, OpCode::*, VM}
+    functions::FunctionRegistry,
+    value::Value,
+    vm::{Chunk, OpCode::*, VM},
 };
 
 #[test]

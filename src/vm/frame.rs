@@ -79,23 +79,19 @@ impl<'c> VM<'c> {
         self.frames.frame()
     }
 
-    pub(super) fn enter_frame(
-        &mut self,
-        chunk: &'c Chunk,
-        ret_dst: usize,
-        reg_offset: usize,
-    ) {
+    pub(super) fn enter_frame(&mut self, chunk: &'c Chunk, ret_dst: usize, reg_offset: usize) {
         self.frames.new_frame(chunk, ret_dst, reg_offset);
     }
 
     /// Returns `Some(return_value)` if we have exited the top-level frame, hence exiting the whole program.
+    /// Remember that the ret dst in the call frame is *absolute*.
     pub(super) fn exit_frame(&mut self, res_reg: usize) -> Option<Value> {
         let dst = self.frame().ret_dst;
         let ret_val = self.stack()[res_reg].clone();
         if self.frames.exit_frame() {
             Some(ret_val)
         } else {
-            self.stack_mut()[dst] = ret_val;
+            self.frames.stack[dst] = ret_val;
             None
         }
     }

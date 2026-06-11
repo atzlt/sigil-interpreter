@@ -206,6 +206,7 @@ impl<'c> VM<'c> {
                 for i in 0..argc {
                     self.stack_mut()[offset + i + 1] = self.stack_index(regs[i]).clone();
                 }
+
                 self.enter_frame(chunk, dst, offset);
             }
         }

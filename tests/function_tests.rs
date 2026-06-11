@@ -39,10 +39,7 @@ fn test_fn_call_no_params() {
 
 #[test]
 fn test_fn_no_return() {
-    assert_eq!(
-        run_program(r"fn nop() { } return nop();"),
-        Value::Nil
-    );
+    assert_eq!(run_program(r"fn nop() { } return nop();"), Value::Nil);
 }
 
 // ── nested / chained calls ──
@@ -58,7 +55,9 @@ fn test_fn_call_nested() {
 #[test]
 fn test_fn_call_as_arg() {
     assert_eq!(
-        run_program(r"fn add(x, y) { return x + y; } fn triple(x) { return x * 3; } return add(triple(1), triple(2));"),
+        run_program(
+            r"fn add(x, y) { return x + y; } fn triple(x) { return x * 3; } return add(triple(1), triple(2));"
+        ),
         Value::Number(9.0)
     );
 }
@@ -87,7 +86,7 @@ fn test_fn_recursive_fibonacci() {
                 if n < 2 { return n; }
                 return fib(n - 1) + fib(n - 2);
             }
-            return fib(3);"
+            return fib(10);"
         ),
         Value::Number(55.0)
     );
@@ -141,7 +140,6 @@ fn test_fn_multiple() {
 //     );
 // }
 
-
 #[test]
 fn test_fn_early_return() {
     assert_eq!(
@@ -183,8 +181,5 @@ fn test_fn_while_sum() {
 
 #[test]
 fn test_fn_empty_return() {
-    assert_eq!(
-        run_program(r"fn f() { return; } return f();"),
-        Value::Nil
-    );
+    assert_eq!(run_program(r"fn f() { return; } return f();"), Value::Nil);
 }
