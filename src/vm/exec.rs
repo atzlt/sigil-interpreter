@@ -138,7 +138,8 @@ impl VM {
                             let chunk_idx = *chunk_idx;
                             for i in 1..=argc {
                                 let window = &self.stack();
-                                self.stack_mut()[offset + i] = window[chunk.read() as usize].clone();
+                                self.stack_mut()[offset + i] =
+                                    window[chunk.read() as usize].clone();
                             }
                             self.enter_frame(chunk_idx, dst, offset);
                             unimplemented!("Bytecode function compilation not supported")
@@ -147,7 +148,10 @@ impl VM {
                 }
                 RETURN => {
                     let reg = chunk.read() as usize;
-                    return Ok(self.stack()[reg].clone());
+                    let from_top_level = self.exit_frame(reg);
+                    if let Some(ret) = from_top_level {
+                        return Ok(ret);
+                    }
                 }
                 JMP => {
                     let ip = chunk.ip as isize - 1;

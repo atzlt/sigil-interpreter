@@ -51,9 +51,16 @@ impl VM {
         self.frames.new_frame(chunk_idx, ret_dst, reg_offset);
     }
 
-    /// Returns `true` if we have exited the top-level frame, hence exiting the whole program.
-    pub(super) fn exit_frame(&mut self) -> bool {
-        self.frames.exit_frame()
+    /// Returns `Some(return_value)` if we have exited the top-level frame, hence exiting the whole program.
+    pub(super) fn exit_frame(&mut self, res_reg: usize) -> Option<Value> {
+        let dst = self.frame().ret_dst;
+        let ret_val = self.stack()[res_reg].clone();
+        if self.frames.exit_frame() {
+            Some(ret_val)
+        } else {
+            self.stack_mut()[dst] = ret_val;
+            None
+        }
     }
 
     pub(super) fn stack(&self) -> StackWindow<'_> {
@@ -67,6 +74,7 @@ impl VM {
     }
 }
 
+/// The `ret_dst` and `reg_offset` in this struct is _absolute_.
 #[derive(Debug)]
 struct CallFrame {
     chunk_idx: usize,
