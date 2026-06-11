@@ -1,4 +1,7 @@
-use crate::{compiler::compile::{Compiler, Result}, emit, emit_args};
+use crate::{
+    compiler::compile::{Compiler, Result},
+    emit, emit_args,
+};
 use ahash::AHashMap;
 use lasso::Spur;
 

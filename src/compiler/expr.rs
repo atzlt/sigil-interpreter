@@ -129,7 +129,7 @@ impl<'a> Compiler<'a> {
 
     // ── Intrinsic call helper ──
 
-    fn emit_intrinsic_call(
+    fn emit_lang_item_call(
         &mut self,
         fun: FnLookupKey,
         args: &[u8],
@@ -145,7 +145,7 @@ impl<'a> Compiler<'a> {
                 ),
             })?;
         let reg = self.target_or_reuse(target, args)?;
-        self.emit_callk(reg, fn_id, 0, args);
+        self.emit_callk(reg, fn_id, self.reg_watermark(), args);
         self.free_other_temps(reg, args);
         Ok(reg)
     }
@@ -195,11 +195,11 @@ impl<'a> Compiler<'a> {
     }
 
     fn emit_binary(&mut self, op: &Token, lhs: u8, rhs: u8, target: Option<u8>) -> Result<u8> {
-        self.emit_intrinsic_call(binary_op_lang_item(op), &[lhs, rhs], target)
+        self.emit_lang_item_call(binary_op_lang_item(op), &[lhs, rhs], target)
     }
 
     fn emit_unary(&mut self, fun: FnLookupKey, operand: u8, target: Option<u8>) -> Result<u8> {
-        self.emit_intrinsic_call(fun, &[operand], target)
+        self.emit_lang_item_call(fun, &[operand], target)
     }
 
     fn emit_ternary(&mut self, test: u8, target: Option<u8>) -> Result<u8> {

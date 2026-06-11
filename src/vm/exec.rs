@@ -6,7 +6,10 @@ use thiserror::Error;
 use crate::{
     functions::{FnEntry, FunctionRegistry},
     value::Value,
-    vm::{Chunk, OpCode, frame::{CallFrame, StackWindow, StackWindowMut}},
+    vm::{
+        Chunk, OpCode,
+        frame::{CallFrame, StackWindow, StackWindowMut},
+    },
 };
 
 const MAX_CALL_DEPTH: usize = 256;
@@ -302,8 +305,7 @@ impl<'c> VM<'c> {
 
     pub fn init_main(&mut self, chunk: &'c Chunk) -> Result<(), RuntimeError> {
         self.ensure_stack(STACK_INIT - 1)?;
-        self.frames
-            .push(CallFrame::new(0, 0, chunk));
+        self.frames.push(CallFrame::new(0, 0, chunk));
         Ok(())
     }
 

@@ -1,7 +1,7 @@
 mod common;
 
 use common::compile_expr_err;
-use sigil_interpreter::compiler::compile::{CompileError, compile_expr};
+use sigil_interpreter::compiler::{CompileError, compile_expr};
 
 #[test]
 fn test_leading_operator() {

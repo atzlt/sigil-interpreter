@@ -140,8 +140,7 @@ impl<'a> Compiler<'a> {
             } else {
                 let chunk_idx = self.chunks.len();
                 if let Some(item) = lang_item {
-                    self.funcs
-                        .register(FnLookupKey::LangItem(item), chunk_idx);
+                    self.funcs.register(FnLookupKey::LangItem(item), chunk_idx);
                 }
                 self.funcs.register(FnLookupKey::Name(name), chunk_idx)
             };
@@ -178,15 +177,14 @@ impl<'a> Compiler<'a> {
         if self.spur_eq(spur, "intrinsic") {
             Ok(FnModifier::Intrinsic)
         } else if self.spur_eq(spur, "lang_item") {
-            self.consume(&Token::LParen).map_err(|_| {
-                CompileError::Unexpected {
+            self.consume(&Token::LParen)
+                .map_err(|_| CompileError::Unexpected {
                     token: self.current(),
                     diag: (
                         self.current_span().clone(),
                         "expected '(' after @lang_item".to_string(),
                     ),
-                }
-            })?;
+                })?;
             let item_spur = if let Token::Identifier(spur) = self.current() {
                 self.advance()?;
                 spur
@@ -208,15 +206,14 @@ impl<'a> Compiler<'a> {
                         format!("unknown lang item: {item_name}"),
                     ),
                 })?;
-            self.consume(&Token::RParen).map_err(|_| {
-                CompileError::Unexpected {
+            self.consume(&Token::RParen)
+                .map_err(|_| CompileError::Unexpected {
                     token: self.current(),
                     diag: (
                         self.current_span().clone(),
-                        "expected ')' after @lang-item".to_string(),
+                        "expected ')' after @lang_item".to_string(),
                     ),
-                }
-            })?;
+                })?;
             Ok(FnModifier::LangItem(lang_item))
         } else {
             let name = self.intern_resolve(&spur);

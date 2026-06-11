@@ -1,7 +1,7 @@
 use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use sigil_interpreter::{compiler::compile::compile_program, vm::VM};
+use sigil_interpreter::{compiler::compile_program, vm::VM};
 
 fn compile_and_run(source: &str) {
     let compiled = compile_program(source).unwrap();

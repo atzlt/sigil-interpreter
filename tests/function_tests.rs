@@ -10,8 +10,8 @@ use crate::common::run_program_err;
 #[test]
 fn test_fn_call_two_params() {
     assert_eq!(
-        run_program(r"fn add(x, y) { return x + y; } return add(1, 2);"),
-        Value::Number(3.0)
+        run_program(r"fn sub(x, y) { return x - y; } return sub(1, 2);"),
+        Value::Number(-1.0)
     );
 }
 
@@ -190,5 +190,8 @@ fn test_fn_empty_return() {
 
 #[test]
 fn test_fn_overflow() {
-    assert!(matches!(run_program_err(r"fn f() { return f(); } return f();"), RuntimeError::StackOverflow { .. }));
+    assert!(matches!(
+        run_program_err(r"fn f() { return f(); } return f();"),
+        RuntimeError::StackOverflow { .. }
+    ));
 }

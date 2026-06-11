@@ -148,34 +148,33 @@ pub struct Compiler<'a> {
     frames: Vec<CompilerFrame>,
 }
 
-fn new_compiler(source: &str) -> Compiler<'_> {
+pub(super) fn new_compiler(source: &str, funcs: FunctionRegistry) -> Compiler<'_> {
     Compiler {
         lexer: Token::lexer(source).spanned(),
         chunks: vec![Chunk::new()],
         tokens: TokenCursor::new(),
         globals: GlobalStore::default(),
-        funcs: FunctionRegistry::with_std(), // TODO: This is a temporary solution. Will be replaced by `@intrinsic` and `@lang-item`s.
+        funcs,
         frames: vec![CompilerFrame::new(0, &[])],
     }
 }
 
-pub fn compile_expr(source: &str) -> Result<(Vec<Chunk>, FunctionRegistry)> {
-    let mut c = new_compiler(source);
+pub(super) fn compile(
+    source: &str,
+    funcs: FunctionRegistry,
+    is_expr: bool,
+) -> Result<(Vec<Chunk>, FunctionRegistry)> {
+    let mut c = new_compiler(source, funcs);
     c.advance()?;
-    let result_reg = c.expression(None)?;
-    emit!(c.chunk_mut(), RETURN, result_reg);
-
-    Ok(c.take_compiled())
-}
-
-pub fn compile_program(source: &str) -> Result<(Vec<Chunk>, FunctionRegistry)> {
-    let mut c = new_compiler(source);
-    c.advance()?;
-    while !c.check(&Token::Eof) {
-        c.statement()?;
+    if is_expr {
+        let result_reg = c.expression(None)?;
+        emit!(c.chunk_mut(), RETURN, result_reg);
+    } else {
+        while !c.check(&Token::Eof) {
+            c.statement()?;
+        }
+        c.emit_safety_net()?;
     }
-    c.emit_safety_net()?;
-
     Ok(c.take_compiled())
 }
 

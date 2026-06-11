@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use sigil_interpreter::{
-    compiler::compile::{CompileError, compile_expr, compile_program},
+    compiler::{CompileError, compile_expr, compile_program},
     value::Value,
     vm::{Chunk, VM, exec::RuntimeError},
 };

@@ -1,7 +1,7 @@
 @intrinsic
 fn print(x);
 
-@lang_item(sub)
-fn sub(x, y) { return x + y; }
+@lang_item(add)
+fn su(x, y) { return x - y; }
 
-print(1 - 2);
+return 1 + 2;

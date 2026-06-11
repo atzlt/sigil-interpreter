@@ -1,7 +1,7 @@
 mod common;
 
 use common::compile_err;
-use sigil_interpreter::compiler::compile::CompileError;
+use sigil_interpreter::compiler::CompileError;
 
 // ── let errors ──
 
