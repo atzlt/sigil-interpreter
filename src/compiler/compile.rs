@@ -139,6 +139,16 @@ pub enum CompileError {
     Multiple(Vec<CompileError>),
 }
 
+impl CompileError {
+    /// Extract the first error from a `Multiple`, or return `self` if it's a single error.
+    pub fn first(self) -> Self {
+        match self {
+            CompileError::Multiple(mut errors) if !errors.is_empty() => errors.remove(0),
+            other => other,
+        }
+    }
+}
+
 pub type Result<T> = std::result::Result<T, CompileError>;
 
 pub struct Compiler<'a> {

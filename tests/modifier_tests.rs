@@ -32,7 +32,7 @@ fn run_with(source: &str, reg: FunctionRegistry) -> Value {
 }
 
 fn run_with_err(source: &str, reg: FunctionRegistry) -> CompileError {
-    compile_program_with(source, reg).unwrap_err()
+    compile_program_with(source, reg).unwrap_err().first()
 }
 
 fn print_chunks(chunks: &[Chunk]) {
@@ -179,6 +179,7 @@ fn test_intrinsic_undefined() {
 fn test_intrinsic_missing_semicolon() {
     let reg = registry(&[mk_intrinsic("add", add)]);
     let err = run_with_err("@intrinsic fn add(a, b) { }", reg);
+    dbg!(&err);
     assert!(matches!(err, CompileError::Unexpected { .. }));
 }
 

@@ -36,9 +36,9 @@ pub fn run_expr(source: &str) -> Value {
 }
 
 pub fn compile_err(source: &str) -> CompileError {
-    compile_program(source).unwrap_err()
+    compile_program(source).unwrap_err().first()
 }
 
 pub fn compile_expr_err(source: &str) -> CompileError {
-    compile_expr(source).unwrap_err()
+    compile_expr(source).unwrap_err().first()
 }

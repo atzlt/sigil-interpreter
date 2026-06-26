@@ -291,13 +291,13 @@ fn binary_op_lang_item(op: &Token) -> FnLookupKey {
         Token::Slash => FnLookupKey::LangItem(LangItem::Div),
         Token::Percent => FnLookupKey::LangItem(LangItem::Rem),
         Token::Equal => FnLookupKey::LangItem(LangItem::Eq),
-        Token::Neq => FnLookupKey::LangItem(LangItem::Neg),
+        Token::Neq => FnLookupKey::LangItem(LangItem::Neq),
         Token::Lt => FnLookupKey::LangItem(LangItem::Lt),
         Token::Le => FnLookupKey::LangItem(LangItem::Le),
         Token::Gt => FnLookupKey::LangItem(LangItem::Gt),
         Token::Ge => FnLookupKey::LangItem(LangItem::Ge),
         // TODO: add more operators as language design settles
-        _ => unreachable!("binary_op_method called on non-binary token"),
+        _ => unreachable!("binary_op_lang_item called with non-binary token {op:?}"),
     }
 }
 

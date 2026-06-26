@@ -1,3 +1,4 @@
+use smallvec::SmallVec;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
@@ -8,7 +9,10 @@ pub enum Value {
     Bool(bool),
     Number(f64),
     String(String),
-    Fn(usize),
+    Fn {
+        fn_id: usize,
+        upvalues: SmallVec<[u16; 4]>,
+    },
 }
 
 impl PartialEq for Value {
@@ -18,7 +22,7 @@ impl PartialEq for Value {
             (Value::Bool(a), Value::Bool(b)) => a == b,
             (Value::Number(a), Value::Number(b)) => a.to_bits() == b.to_bits(),
             (Value::String(a), Value::String(b)) => a == b,
-            (Value::Fn(a), Value::Fn(b)) => a == b,
+            (Value::Fn { fn_id: a, .. }, Value::Fn { fn_id: b, .. }) => a == b,
             _ => false,
         }
     }
@@ -34,7 +38,7 @@ impl Hash for Value {
             Value::Bool(b) => b.hash(state),
             Value::Number(n) => n.to_bits().hash(state),
             Value::String(s) => s.hash(state),
-            Value::Fn(f) => f.hash(state),
+            Value::Fn { fn_id, .. } => fn_id.hash(state),
         }
     }
 }
@@ -46,7 +50,7 @@ impl Value {
             Value::Bool(b) => *b,
             Value::Number(n) => *n != 0.0,
             Value::String(s) => !s.is_empty(),
-            Value::Fn(_) => true,
+            Value::Fn { .. } => true,
         }
     }
 
@@ -65,7 +69,13 @@ impl fmt::Display for Value {
             Value::Bool(b) => write!(f, "{b}"),
             Value::Number(n) => write!(f, "{n}"),
             Value::String(s) => write!(f, "{s}"),
-            Value::Fn(fun) => write!(f, "ƒ_{fun:?}"),
+            Value::Fn { fn_id, upvalues } => {
+                if upvalues.is_empty() {
+                    write!(f, "ƒ_{fn_id:?}")
+                } else {
+                    write!(f, "ƒ_{fn_id:?}[{} up]", upvalues.len())
+                }
+            }
         }
     }
 }
