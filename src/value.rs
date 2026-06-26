@@ -9,7 +9,10 @@ pub enum Value {
     Bool(bool),
     Number(f64),
     String(String),
-    Fn {
+    /// A plain function without captured upvalues.
+    Fn(usize),
+    /// A closure — a function with captured upvalues (indices into `VM.upvalues`).
+    Closure {
         fn_id: usize,
         upvalues: SmallVec<[u16; 4]>,
     },
@@ -29,7 +32,8 @@ impl PartialEq for Value {
             (Value::Bool(a), Value::Bool(b)) => a == b,
             (Value::Number(a), Value::Number(b)) => a.to_bits() == b.to_bits(),
             (Value::String(a), Value::String(b)) => a == b,
-            (Value::Fn { fn_id: a, .. }, Value::Fn { fn_id: b, .. }) => a == b,
+            (Value::Fn(a), Value::Fn(b)) => a == b,
+            (Value::Closure { fn_id: a, .. }, Value::Closure { fn_id: b, .. }) => a == b,
             (
                 Value::FnProto {
                     fn_id: a,
@@ -55,8 +59,12 @@ impl Hash for Value {
             Value::Bool(b) => b.hash(state),
             Value::Number(n) => n.to_bits().hash(state),
             Value::String(s) => s.hash(state),
-            Value::Fn { fn_id, .. } => fn_id.hash(state),
-            Value::FnProto { fn_id, upvalue_count, .. } => {
+            Value::Fn(f) => f.hash(state),
+            Value::Closure { fn_id, .. } => fn_id.hash(state),
+            Value::FnProto {
+                fn_id,
+                upvalue_count,
+            } => {
                 fn_id.hash(state);
                 upvalue_count.hash(state);
             }
@@ -71,7 +79,8 @@ impl Value {
             Value::Bool(b) => *b,
             Value::Number(n) => *n != 0.0,
             Value::String(s) => !s.is_empty(),
-            Value::Fn { .. } => true,
+            Value::Fn(_) => true,
+            Value::Closure { .. } => true,
             Value::FnProto { .. } => true,
         }
     }
@@ -91,12 +100,9 @@ impl fmt::Display for Value {
             Value::Bool(b) => write!(f, "{b}"),
             Value::Number(n) => write!(f, "{n}"),
             Value::String(s) => write!(f, "{s}"),
-            Value::Fn { fn_id, upvalues } => {
-                if upvalues.is_empty() {
-                    write!(f, "ƒ_{fn_id:?}")
-                } else {
-                    write!(f, "ƒ_{fn_id:?}[{} up]", upvalues.len())
-                }
+            Value::Fn(fun) => write!(f, "ƒ_{fun:?}"),
+            Value::Closure { fn_id, upvalues } => {
+                write!(f, "ƒ_{fn_id:?}[{} up]", upvalues.len())
             }
             Value::FnProto {
                 fn_id,

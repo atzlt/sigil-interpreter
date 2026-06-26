@@ -94,10 +94,7 @@ impl<'c> VM<'c> {
                 LOADFUN => {
                     let dst = self.read() as usize;
                     let fun = self.read_wide() as usize;
-                    self.stack_mut()[dst] = Value::Fn {
-                        fn_id: fun,
-                        upvalues: smallvec::SmallVec::new(),
-                    };
+                    self.stack_mut()[dst] = Value::Fn(fun);
                 }
                 GETGLB => {
                     let dst = self.read() as usize;
@@ -119,7 +116,8 @@ impl<'c> VM<'c> {
 
                     let reg_val = &self.stack()[reg];
                     let (fn_id, upvalues) = match reg_val {
-                        Value::Fn { fn_id, upvalues } => (*fn_id, upvalues.clone()),
+                        Value::Fn(f) => (*f, SmallVec::new()),
+                        Value::Closure { fn_id, upvalues } => (*fn_id, upvalues.clone()),
                         _ => {
                             return Err(RuntimeError::UndefinedFunction {
                                 name: "this variable is not callable".into(),
@@ -222,7 +220,7 @@ impl<'c> VM<'c> {
                         }
                     }
 
-                    self.stack_mut()[dst] = Value::Fn {
+                    self.stack_mut()[dst] = Value::Closure {
                         fn_id,
                         upvalues: upvalue_indices,
                     };
