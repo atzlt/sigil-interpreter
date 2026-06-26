@@ -179,6 +179,15 @@ impl<'a> Compiler<'a> {
     /// Recursively search enclosing frames for `name`, building a chain of
     /// `UpvalueDescriptor`s from the outermost capture back to `depth`.
     fn resolve_upvalue_at(&mut self, depth: usize, name: Spur) -> Option<u8> {
+        // Already captured in this frame? Reuse the existing index.
+        if let Some(pos) = self.frames[depth]
+            .upvalues
+            .iter()
+            .position(|uv| uv.name == name)
+        {
+            return Some(pos as u8);
+        }
+
         // 1. Try the immediately enclosing frame's locals
         let local_reg = {
             let enclosing = &mut self.frames[depth - 1];

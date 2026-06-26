@@ -80,6 +80,22 @@ fn bench_if_else_chain(c: &mut Criterion) {
     });
 }
 
+fn bench_fn_nesting(c: &mut Criterion) {
+    let n = 100;
+    let mut source = String::from("fn level0() {");
+    for i in 1..=n {
+        source.push_str(&format!("fn level{i}() {{"));
+    }
+    source.push_str("return 42;");
+    for i in (1..=n).rev() {
+        source.push_str(&format!("}} return level{i}();"));
+    }
+    source.push_str("} return level0();");
+    c.bench_function("fn/nesting_100", |b| {
+        b.iter(|| compile_and_run(black_box(&source)))
+    });
+}
+
 criterion_group!(
     benches,
     bench_expr_long_chain,
@@ -87,5 +103,6 @@ criterion_group!(
     bench_fibonacci_iter,
     bench_fibonacci_recursion,
     bench_if_else_chain,
+    bench_fn_nesting,
 );
 criterion_main!(benches);
