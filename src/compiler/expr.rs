@@ -156,6 +156,11 @@ impl<'a> Compiler<'a> {
         if let Some(reg) = self.try_resolve_local(name) {
             return Ok(reg);
         }
+        if let Some(up_idx) = self.resolve_upvalue(name) {
+            let reg = self.alloc_temp()?;
+            emit!(self.chunk_mut(), GETUPVAL, reg, wide up_idx as u16);
+            return Ok(reg);
+        }
         let slot = self
             .resolve_global(name)
             .ok_or_else(|| CompileError::UndefinedVariable {

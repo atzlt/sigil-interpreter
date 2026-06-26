@@ -7,6 +7,7 @@ use crate::{
     },
     emit, emit_args,
     functions::{FnLookupKey, FnModifier, LangItem},
+    value::Value,
 };
 
 type Identifier = Spur;
@@ -131,7 +132,9 @@ impl<'a> Compiler<'a> {
             _ => None,
         });
 
-        if self.is_top_level() {
+        let is_top = self.is_top_level();
+
+        if is_top {
             let id = if is_intrinsic {
                 let name_str = self.intern_resolve(&name);
                 self.funcs
@@ -156,17 +159,34 @@ impl<'a> Compiler<'a> {
                 self.funcs.register(FnLookupKey::Name(name), chunk_idx)
             };
             self.store_global_fn(name, id)?;
-        } else {
-            unimplemented!("Nested function declaration is not supported yet")
         }
 
         if is_intrinsic {
             self.consume(&Token::Semicolon)?;
         } else {
-            self.new_frame(&args);
+            let chunk_idx = self.new_frame(&args);
             self.parse_block()?;
             self.emit_safety_net()?;
-            self.exit_frame()?;
+
+            if is_top {
+                self.exit_frame()?;
+            } else {
+                // Nested function: capture upvalues, register, emit CLOSURE.
+                let upvalues = std::mem::take(&mut self.frame_mut().upvalues);
+                self.exit_frame()?;
+
+                let fn_id = self
+                    .funcs
+                    .register(FnLookupKey::Name(name), chunk_idx);
+                let upvalue_count = upvalues.len() as u16;
+                let proto_idx = self
+                    .chunk_mut()
+                    .add_constant(Value::FnProto {
+                        fn_id,
+                        upvalue_count,
+                    });
+                self.emit_closure(name, proto_idx, &upvalues)?;
+            }
         }
 
         Ok(())
@@ -244,6 +264,10 @@ impl<'a> Compiler<'a> {
         if let Some(local) = self.try_resolve_local(id) {
             let reg = self.expression(Some(local))?;
             self.emit_move(local, reg);
+            self.frame_mut().regs.free_temp(reg);
+        } else if let Some(upvalue) = self.resolve_upvalue(id) {
+            let reg = self.expression(None)?;
+            emit!(self.chunk_mut(), SETUPVAL, reg, wide upvalue as u16);
             self.frame_mut().regs.free_temp(reg);
         } else if let Some(global) = self.resolve_global(id) {
             let reg = self.expression(None)?;

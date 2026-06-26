@@ -157,7 +157,7 @@ pub struct Compiler<'a> {
     pub(super) tokens: TokenCursor,
     pub(super) globals: GlobalStore,
     pub(super) funcs: FunctionRegistry,
-    frames: Vec<CompilerFrame>,
+    pub(super) frames: Vec<CompilerFrame>,
     errors: Vec<CompileError>,
 }
 
@@ -373,6 +373,24 @@ impl Compiler<'_> {
         self.chunk_mut().append(args);
     }
 
+    /// Emit a `CLOSURE` instruction: reads `FnProto` from the constant pool,
+    /// captures upvalues, and stores the resulting closure in a local register.
+    pub(super) fn emit_closure(
+        &mut self,
+        name: Spur,
+        proto_idx: u16,
+        upvalues: &[UpvalueDescriptor],
+    ) -> Result<()> {
+        let reg = self.alloc_held()?;
+        emit!(self.chunk_mut(), CLOSURE, reg, wide proto_idx);
+        for uv in upvalues {
+            self.chunk_mut().emit(uv.is_local as u8);
+            self.chunk_mut().emit(uv.index);
+        }
+        self.add_local(name, reg);
+        Ok(())
+    }
+
     pub(super) fn new_label(&mut self) -> Label {
         self.frame_mut().labels.alloc()
     }
@@ -446,12 +464,25 @@ impl Compiler<'_> {
 
 // Compiler Frames
 
+#[derive(Debug, Clone)]
+pub(super) struct UpvalueDescriptor {
+    /// The variable name (for cross-frame lookup during compilation).
+    pub(super) name: Spur,
+    /// `true` → captures directly from the immediately enclosing frame's register.
+    /// `false` → captures from the enclosing frame's own upvalue list (transitive).
+    pub(super) is_local: bool,
+    /// `is_local` → register index in the enclosing frame.
+    /// `!is_local` → upvalue index in the enclosing frame's upvalue list.
+    pub(super) index: u8,
+}
+
 #[derive(Debug, Default)]
 pub(super) struct CompilerFrame {
     pub(super) regs: RegisterTracker,
     pub(super) locals: LocalsTracker,
     pub(super) loops: LoopTracker,
     pub(super) labels: LabelTracker,
+    pub(super) upvalues: Vec<UpvalueDescriptor>,
     chunk_idx: usize,
 }
 
@@ -462,6 +493,7 @@ impl CompilerFrame {
             locals: LocalsTracker::new_with(args),
             loops: LoopTracker::new(),
             labels: LabelTracker::default(),
+            upvalues: Vec::new(),
             chunk_idx,
         }
     }

@@ -13,6 +13,13 @@ pub enum Value {
         fn_id: usize,
         upvalues: SmallVec<[u16; 4]>,
     },
+    /// Function prototype stored in the constant pool.
+    /// The `CLOSURE` opcode reads this to create a runtime `Fn` value
+    /// with captured upvalues.
+    FnProto {
+        fn_id: usize,
+        upvalue_count: u16,
+    },
 }
 
 impl PartialEq for Value {
@@ -23,6 +30,16 @@ impl PartialEq for Value {
             (Value::Number(a), Value::Number(b)) => a.to_bits() == b.to_bits(),
             (Value::String(a), Value::String(b)) => a == b,
             (Value::Fn { fn_id: a, .. }, Value::Fn { fn_id: b, .. }) => a == b,
+            (
+                Value::FnProto {
+                    fn_id: a,
+                    upvalue_count: ac,
+                },
+                Value::FnProto {
+                    fn_id: b,
+                    upvalue_count: bc,
+                },
+            ) => a == b && ac == bc,
             _ => false,
         }
     }
@@ -39,6 +56,10 @@ impl Hash for Value {
             Value::Number(n) => n.to_bits().hash(state),
             Value::String(s) => s.hash(state),
             Value::Fn { fn_id, .. } => fn_id.hash(state),
+            Value::FnProto { fn_id, upvalue_count, .. } => {
+                fn_id.hash(state);
+                upvalue_count.hash(state);
+            }
         }
     }
 }
@@ -51,6 +72,7 @@ impl Value {
             Value::Number(n) => *n != 0.0,
             Value::String(s) => !s.is_empty(),
             Value::Fn { .. } => true,
+            Value::FnProto { .. } => true,
         }
     }
 
@@ -75,6 +97,12 @@ impl fmt::Display for Value {
                 } else {
                     write!(f, "ƒ_{fn_id:?}[{} up]", upvalues.len())
                 }
+            }
+            Value::FnProto {
+                fn_id,
+                upvalue_count,
+            } => {
+                write!(f, "<proto ƒ_{fn_id:?} {upvalue_count} up>")
             }
         }
     }

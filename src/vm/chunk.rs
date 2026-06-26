@@ -196,12 +196,48 @@ impl fmt::Display for Chunk {
                     pos += 1;
                     let proto = u16::from_le_bytes([code[pos], code[pos + 1]]);
                     pos += 2;
-                    writeln!(f, "CLOSURE R{dst} K{proto}")?;
+                    write!(f, "CLOSURE R{dst} K{proto}")?;
+                    // Read upvalue_count from the FnProto constant so we can
+                    // skip the per-upvalue descriptors and show them.
+                    if let Value::FnProto { upvalue_count, .. } =
+                        self.constants.get(proto)
+                    {
+                        let n = *upvalue_count as usize;
+                        let mut parts = Vec::with_capacity(n);
+                        for _ in 0..n {
+                            let is_local = code[pos];
+                            pos += 1;
+                            let index = code[pos];
+                            pos += 1;
+                            parts.push(if is_local != 0 {
+                                format!("R{index}")
+                            } else {
+                                format!("U{index}")
+                            });
+                        }
+                        writeln!(f, " [{}]", parts.join(", "))?;
+                    } else {
+                        writeln!(f)?;
+                    }
                 }
                 NEWSTRUCT => {
                     let dst = code[pos];
                     pos += 1;
                     writeln!(f, "NEWSTRUCT R{dst}")?;
+                }
+                GETUPVAL => {
+                    let dst = code[pos];
+                    pos += 1;
+                    let idx = u16::from_le_bytes([code[pos], code[pos + 1]]);
+                    pos += 2;
+                    writeln!(f, "GETUPVAL R{dst} U{idx}")?;
+                }
+                SETUPVAL => {
+                    let src = code[pos];
+                    pos += 1;
+                    let idx = u16::from_le_bytes([code[pos], code[pos + 1]]);
+                    pos += 2;
+                    writeln!(f, "SETUPVAL U{idx} R{src}")?;
                 }
             }
         }

@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use sigil_interpreter::{
     compiler::{CompileError, compile_expr, compile_program},
     value::Value,

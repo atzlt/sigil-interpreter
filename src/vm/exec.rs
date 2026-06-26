@@ -1,5 +1,6 @@
 use std::ops::Range;
 
+use slab::Slab;
 use smallvec::SmallVec;
 use thiserror::Error;
 
@@ -9,6 +10,7 @@ use crate::{
     vm::{
         Chunk, OpCode,
         frame::{CallFrame, StackWindow, StackWindowMut},
+        upvalue::Upvalue,
     },
 };
 
@@ -33,6 +35,7 @@ pub struct VM<'c> {
     stack: Vec<Value>,
     frames: Vec<CallFrame<'c>>,
     globals: Vec<Value>,
+    upvalues: Slab<Upvalue>,
 }
 
 impl Default for VM<'_> {
@@ -47,6 +50,7 @@ impl<'c> VM<'c> {
             stack: vec![Value::Nil; STACK_INIT],
             frames: Vec::new(),
             globals: Vec::new(),
+            upvalues: Slab::new(),
         }
     }
 
@@ -113,9 +117,9 @@ impl<'c> VM<'c> {
                     let offset = self.read() as usize;
                     let argc = self.read() as usize;
 
-                    let reg = &self.stack()[reg];
-                    let fn_id = match reg {
-                        Value::Fn { fn_id, .. } => *fn_id,
+                    let reg_val = &self.stack()[reg];
+                    let (fn_id, upvalues) = match reg_val {
+                        Value::Fn { fn_id, upvalues } => (*fn_id, upvalues.clone()),
                         _ => {
                             return Err(RuntimeError::UndefinedFunction {
                                 name: "this variable is not callable".into(),
@@ -124,7 +128,7 @@ impl<'c> VM<'c> {
                         }
                     };
 
-                    self.handle_call(chunks, registry, fn_id, argc, dst, offset)?;
+                    self.handle_call(chunks, registry, fn_id, argc, dst, offset, upvalues)?;
                 }
                 CALLK => {
                     let dst: usize = self.read() as usize;
@@ -132,7 +136,15 @@ impl<'c> VM<'c> {
                     let offset = self.read() as usize;
                     let argc = self.read() as usize;
 
-                    self.handle_call(chunks, registry, fn_id, argc, dst, offset)?;
+                    self.handle_call(
+                        chunks,
+                        registry,
+                        fn_id,
+                        argc,
+                        dst,
+                        offset,
+                        SmallVec::new(),
+                    )?;
                 }
                 RETURN => {
                     let reg = self.read() as usize;
@@ -168,9 +180,78 @@ impl<'c> VM<'c> {
                         self.set_ip(new_ip as usize);
                     }
                 }
-                CLOSURE | NEWSTRUCT => {
+                CLOSURE => {
+                    let dst = self.read() as usize;
+                    let proto_idx = self.read_wide() as usize;
+
+                    let (fn_id, upvalue_count) =
+                        match self.chunk().constants.get(proto_idx as u16) {
+                            Value::FnProto {
+                                fn_id,
+                                upvalue_count,
+                            } => (*fn_id, *upvalue_count as usize),
+                            _ => {
+                                let span = self.locus_span();
+                                return Err(RuntimeError::UndefinedFunction {
+                                    name: "this variable is not a function prototype".into(),
+                                    span,
+                                });
+                            }
+                        };
+
+                    let cur_offset = self.frames.last().unwrap().reg_offset;
+                    let mut upvalue_indices: SmallVec<[u16; 4]> = SmallVec::new();
+
+                    for _ in 0..upvalue_count {
+                        let is_local = self.read() != 0;
+                        let index = self.read() as usize;
+
+                        if is_local {
+                            // Capture from the current frame's stack.
+                            let abs_pos = cur_offset + index;
+                            let key = self.upvalues.insert(Upvalue::Open(abs_pos));
+                            upvalue_indices.push(key as u16);
+                            // Track in current frame so it gets closed on return.
+                            self.insert_open_upvalue_sorted(key as u16, abs_pos);
+                        } else {
+                            // Transitive capture — copy the upvalue key from
+                            // the enclosing closure.
+                            let parent_up =
+                                self.frames.last().unwrap().closure_upvalues[index];
+                            upvalue_indices.push(parent_up);
+                        }
+                    }
+
+                    self.stack_mut()[dst] = Value::Fn {
+                        fn_id,
+                        upvalues: upvalue_indices,
+                    };
+                }
+                NEWSTRUCT => {
                     let span = self.locus_span();
                     return Err(RuntimeError::InvalidOpCode { op_byte, span });
+                }
+                GETUPVAL => {
+                    let dst = self.read() as usize;
+                    let idx = self.read_wide() as usize;
+                    let abs_key =
+                        self.frames.last().unwrap().closure_upvalues[idx] as usize;
+                    let val = match &self.upvalues[abs_key] {
+                        Upvalue::Open(pos) => self.stack[*pos].clone(),
+                        Upvalue::Closed(v) => v.clone(),
+                    };
+                    self.stack_mut()[dst] = val;
+                }
+                SETUPVAL => {
+                    let src = self.read() as usize;
+                    let idx = self.read_wide() as usize;
+                    let abs_key =
+                        self.frames.last().unwrap().closure_upvalues[idx] as usize;
+                    let val = self.stack()[src].clone();
+                    match &mut self.upvalues[abs_key] {
+                        Upvalue::Open(pos) => self.stack[*pos] = val,
+                        Upvalue::Closed(v) => *v = val,
+                    }
                 }
             }
         }
@@ -184,6 +265,7 @@ impl<'c> VM<'c> {
         argc: usize,
         dst: usize,
         offset: usize,
+        closure_upvalues: SmallVec<[u16; 4]>,
     ) -> Result<(), RuntimeError> {
         let func = registry
             .get(&fn_id)
@@ -214,7 +296,7 @@ impl<'c> VM<'c> {
                         self.stack[dst_abs] = self.stack[src].clone();
                     }
                 }
-                self.enter_frame(chunk, dst, offset)?;
+                self.enter_frame(chunk, dst, offset, closure_upvalues)?;
             }
         }
         Ok(())
@@ -296,19 +378,21 @@ impl<'c> VM<'c> {
         chunk: &'c Chunk,
         ret_dst: usize,
         reg_offset: usize,
+        closure_upvalues: SmallVec<[u16; 4]>,
     ) -> Result<(), RuntimeError> {
         let cur_offset = self.frames.last().unwrap().reg_offset;
         let ret_dst_abs = cur_offset + ret_dst;
         let reg_offset_abs = cur_offset + reg_offset + 1;
         self.ensure_stack(reg_offset_abs + 255)?;
-        let frame = CallFrame::new(ret_dst_abs, reg_offset_abs, chunk);
+        let frame = CallFrame::new(ret_dst_abs, reg_offset_abs, chunk, closure_upvalues);
         self.frames.push(frame);
         Ok(())
     }
 
     pub fn init_main(&mut self, chunk: &'c Chunk) -> Result<(), RuntimeError> {
         self.ensure_stack(STACK_INIT - 1)?;
-        self.frames.push(CallFrame::new(0, 0, chunk));
+        self.frames
+            .push(CallFrame::new(0, 0, chunk, SmallVec::new()));
         Ok(())
     }
 
@@ -317,14 +401,32 @@ impl<'c> VM<'c> {
         chunk: &'c Chunk,
         ret_dst: usize,
         reg_offset: usize,
+        closure_upvalues: SmallVec<[u16; 4]>,
     ) -> Result<(), RuntimeError> {
-        self.new_frame(chunk, ret_dst, reg_offset)?;
+        self.new_frame(chunk, ret_dst, reg_offset, closure_upvalues)?;
         Ok(())
     }
 
     pub(super) fn exit_frame(&mut self, res_reg: usize) -> Option<Value> {
         let dst = self.frames.last().unwrap().ret_dst;
         let ret_val = self.stack()[res_reg].clone();
+
+        // Close every open upvalue that points into this frame's stack.
+        let open_keys: SmallVec<[u16; 4]> = self
+            .frames
+            .last()
+            .unwrap()
+            .open_upvalues
+            .iter()
+            .copied()
+            .collect();
+        for key in open_keys {
+            if let Upvalue::Open(pos) = &self.upvalues[key as usize] {
+                let val = self.stack[*pos].clone();
+                self.upvalues[key as usize] = Upvalue::Closed(val);
+            }
+        }
+
         self.frames.pop();
         if self.frames.is_empty() {
             Some(ret_val)
@@ -332,6 +434,24 @@ impl<'c> VM<'c> {
             self.stack[dst] = ret_val;
             None
         }
+    }
+
+    /// Insert an open-upvalue key into the current frame's list, keeping it
+    /// sorted by the absolute stack position the upvalue references.
+    fn insert_open_upvalue_sorted(&mut self, key: u16, abs_pos: usize) {
+        let frame = self.frames.last_mut().unwrap();
+        let pos = frame
+            .open_upvalues
+            .binary_search_by(|&k| {
+                let up = &self.upvalues[k as usize];
+                let p = match up {
+                    Upvalue::Open(p) => *p,
+                    Upvalue::Closed(_) => usize::MAX,
+                };
+                p.cmp(&abs_pos)
+            })
+            .unwrap_or_else(|e| e);
+        frame.open_upvalues.insert(pos, key);
     }
 
     fn locus_span(&self) -> Range<usize> {

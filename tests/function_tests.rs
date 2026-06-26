@@ -195,3 +195,97 @@ fn test_fn_overflow() {
         RuntimeError::StackOverflow { .. }
     ));
 }
+
+// ── nested functions & closures ──
+
+#[test]
+fn test_nested_fn_captures_outer_local() {
+    assert_eq!(
+        run_program(
+            r"fn outer() {
+                let x = 42;
+                fn inner() {
+                    return x;
+                }
+                return inner();
+            }
+            return outer();"
+        ),
+        Value::Number(42.0)
+    );
+}
+
+#[test]
+fn test_nested_fn_captures_param() {
+    assert_eq!(
+        run_program(
+            r"fn make_adder(n) {
+                fn adder(x) {
+                    return n + x;
+                }
+                return adder(3);
+            }
+            return make_adder(5);"
+        ),
+        Value::Number(8.0)
+    );
+}
+
+#[test]
+fn test_nested_fn_mutates_outer() {
+    assert_eq!(
+        run_program(
+            r"fn counter() {
+                let n = 0;
+                fn bump() {
+                    n = n + 1;
+                    return n;
+                }
+                bump();
+                bump();
+                return bump();
+            }
+            return counter();"
+        ),
+        Value::Number(3.0)
+    );
+}
+
+#[test]
+fn test_nested_fn_no_capture() {
+    assert_eq!(
+        run_program(
+            r"fn outer() {
+                fn inner(x) {
+                    return x * 2;
+                }
+                return inner(21);
+            }
+            return outer();"
+        ),
+        Value::Number(42.0)
+    );
+}
+
+#[test]
+fn test_nested_fn_deep_capture() {
+    // Three levels: innermost captures from outermost
+    assert_eq!(
+        run_program(
+            r"fn a() {
+                let x = 10;
+                fn b() {
+                    let y = 20;
+                    fn c() {
+                        fn d() { return x + y; }
+                        return d();
+                    }
+                    return c();
+                }
+                return b();
+            }
+            return a();"
+        ),
+        Value::Number(30.0)
+    );
+}
