@@ -95,6 +95,10 @@ impl<'a> Compiler<'a> {
                 self.advance()?;
                 self.emit_nil()
             }
+            Token::Fn => {
+                self.advance()?;
+                self.parse_closure_expr(target)
+            }
             Token::Identifier(name) => {
                 let name = *name;
                 self.advance()?;
@@ -124,6 +128,46 @@ impl<'a> Compiler<'a> {
                     format!("expected expression, found {}", &self.current()),
                 ),
             }),
+        }
+    }
+
+    /// Parse an anonymous closure expression: `fn (args) { body }` or `fn (args) expr`.
+    /// Called from `parse_prefix` after consuming `fn`.
+    fn parse_closure_expr(&mut self, target: Option<u8>) -> Result<u8> {
+        let args = self.parse_arglist()?;
+
+        let chunk_idx = self.new_frame(&args);
+
+        if self.current() == Token::LBrace {
+            self.parse_block()?;
+            self.emit_safety_net()?;
+        } else {
+            // Expression body: `fn(x, y) expr`
+            let reg = self.expression(None)?;
+            emit!(self.chunk_mut(), RETURN, reg);
+        }
+
+        let upvalues = std::mem::take(&mut self.frame_mut().upvalues);
+        self.exit_frame()?;
+
+        let anon_id = self.next_anon_id();
+        let fn_id = self
+            .funcs
+            .register(FnLookupKey::Anon(anon_id), chunk_idx);
+        let upvalue_count = upvalues.len() as u16;
+        let proto_idx = self.chunk_mut().add_constant(Value::FnProto {
+            fn_id,
+            upvalue_count,
+        });
+
+        let reg = self.emit_closure_temp(proto_idx, &upvalues)?;
+        // If the caller wants the result in a specific register, move it.
+        if let Some(t) = target {
+            self.emit_move(t, reg);
+            self.frame_mut().regs.free_temp(reg);
+            Ok(t)
+        } else {
+            Ok(reg)
         }
     }
 

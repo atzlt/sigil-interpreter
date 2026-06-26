@@ -58,6 +58,8 @@ pub enum FnLookupKey {
     LangItem(LangItem),
     Name(Spur),
     External(String),
+    /// Anonymous closure — auto-generated numeric ID.
+    Anon(u32),
 }
 
 impl fmt::Display for FnLookupKey {
@@ -66,6 +68,7 @@ impl fmt::Display for FnLookupKey {
             FnLookupKey::LangItem(item) => write!(f, "lang-item({item})"),
             FnLookupKey::Name(spur) => write!(f, "ƒ_{spur:?}"),
             FnLookupKey::External(name) => write!(f, "{name}"),
+            FnLookupKey::Anon(id) => write!(f, "<closure#{id}>"),
         }
     }
 }

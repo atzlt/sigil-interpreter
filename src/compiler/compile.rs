@@ -158,6 +158,8 @@ pub struct Compiler<'a> {
     pub(super) globals: GlobalStore,
     pub(super) funcs: FunctionRegistry,
     pub(super) frames: Vec<CompilerFrame>,
+    /// Counter for anonymous closure IDs.
+    anon_counter: u32,
     errors: Vec<CompileError>,
 }
 
@@ -169,6 +171,7 @@ pub(super) fn new_compiler(source: &str, funcs: FunctionRegistry) -> Compiler<'_
         globals: GlobalStore::default(),
         funcs,
         frames: vec![CompilerFrame::new(0, &[])],
+        anon_counter: 0,
         errors: Vec::new(),
     }
 }
@@ -373,6 +376,13 @@ impl Compiler<'_> {
         self.chunk_mut().append(args);
     }
 
+    /// Allocate a unique ID for an anonymous closure.
+    pub(super) fn next_anon_id(&mut self) -> u32 {
+        let id = self.anon_counter;
+        self.anon_counter += 1;
+        id
+    }
+
     /// Emit a `CLOSURE` instruction: reads `FnProto` from the constant pool,
     /// captures upvalues, and stores the resulting closure in a local register.
     pub(super) fn emit_closure(
@@ -389,6 +399,22 @@ impl Compiler<'_> {
         }
         self.add_local(name, reg);
         Ok(())
+    }
+
+    /// Emit a `CLOSURE` for an anonymous closure expression.
+    /// Returns a temp register holding the resulting `Value::Closure`.
+    pub(super) fn emit_closure_temp(
+        &mut self,
+        proto_idx: u16,
+        upvalues: &[UpvalueDescriptor],
+    ) -> Result<u8> {
+        let reg = self.alloc_temp()?;
+        emit!(self.chunk_mut(), CLOSURE, reg, wide proto_idx);
+        for uv in upvalues {
+            self.chunk_mut().emit(uv.is_local as u8);
+            self.chunk_mut().emit(uv.index);
+        }
+        Ok(reg)
     }
 
     pub(super) fn new_label(&mut self) -> Label {

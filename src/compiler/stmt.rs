@@ -61,7 +61,7 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn parse_block(&mut self) -> Result<()> {
+    pub(super) fn parse_block(&mut self) -> Result<()> {
         let open_span = self.current_span().clone();
         self.consume(&Token::LBrace)?;
         self.enter_scope();
@@ -381,7 +381,7 @@ impl<'a> Compiler<'a> {
 }
 
 impl Compiler<'_> {
-    fn parse_arglist(&mut self) -> Result<Vec<Identifier>> {
+    pub(super) fn parse_arglist(&mut self) -> Result<Vec<Identifier>> {
         self.consume(&Token::LParen)
             .map_err(|_| CompileError::Unexpected {
                 token: self.current(),

@@ -289,3 +289,64 @@ fn test_nested_fn_deep_capture() {
         Value::Number(30.0)
     );
 }
+
+// ── closure expression (anonymous fn) tests ──
+
+#[test]
+fn test_closure_expr_block_body() {
+    assert_eq!(
+        run_program(r"let f = fn(x) { return x + 1; }; return f(5);"),
+        Value::Number(6.0)
+    );
+}
+
+#[test]
+fn test_closure_expr_expr_body() {
+    assert_eq!(
+        run_program(r"let f = fn(x) x + 1; return f(5);"),
+        Value::Number(6.0)
+    );
+}
+
+#[test]
+fn test_closure_expr_captures_outer() {
+    assert_eq!(
+        run_program(r"let n = 10; let f = fn(x) x + n; return f(5);"),
+        Value::Number(15.0)
+    );
+}
+
+#[test]
+fn test_closure_expr_passed_as_arg() {
+    assert_eq!(
+        run_program(
+            r"fn apply(f, x) { return f(x); } return apply(fn(n) n + 1, 5);"
+        ),
+        Value::Number(6.0)
+    );
+}
+
+#[test]
+fn test_closure_expr_returned() {
+    assert_eq!(
+        run_program(
+            r"fn make_adder(n) { return fn(x) x + n; } let add5 = make_adder(5); return add5(3);"
+        ),
+        Value::Number(8.0)
+    );
+}
+
+#[test]
+fn test_closure_expr_no_params() {
+    assert_eq!(run_program(r"let f = fn() 42; return f();"), Value::Number(42.0));
+}
+
+#[test]
+fn test_closure_expr_mutates_outer() {
+    assert_eq!(
+        run_program(
+            r"let n = 0; let bump = fn() { n = n + 1; return n; }; bump(); bump(); return bump();"
+        ),
+        Value::Number(3.0)
+    );
+}
