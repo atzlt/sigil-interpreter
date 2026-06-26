@@ -1,6 +1,5 @@
 use std::ops::Range;
 
-use slab::Slab;
 use smallvec::SmallVec;
 use thiserror::Error;
 
@@ -10,6 +9,7 @@ use crate::{
     vm::{
         Chunk, OpCode,
         frame::{CallFrame, StackWindow, StackWindowMut},
+        heap::Heap,
         upvalue::Upvalue,
     },
 };
@@ -35,7 +35,7 @@ pub struct VM<'c> {
     stack: Vec<Value>,
     frames: Vec<CallFrame<'c>>,
     globals: Vec<Value>,
-    upvalues: Slab<Upvalue>,
+    heap: Heap,
 }
 
 impl Default for VM<'_> {
@@ -50,7 +50,7 @@ impl<'c> VM<'c> {
             stack: vec![Value::Nil; STACK_INIT],
             frames: Vec::new(),
             globals: Vec::new(),
-            upvalues: Slab::new(),
+            heap: Heap::new(),
         }
     }
 
@@ -207,10 +207,9 @@ impl<'c> VM<'c> {
                         if is_local {
                             // Capture from the current frame's stack.
                             let abs_pos = cur_offset + index;
-                            let key = self.upvalues.insert(Upvalue::Open(abs_pos));
-                            upvalue_indices.push(key as u16);
-                            // Track in current frame so it gets closed on return.
-                            self.insert_open_upvalue_sorted(key as u16, abs_pos);
+                            let key = self.heap.push_upvalue(Upvalue::Open(abs_pos));
+                            upvalue_indices.push(key);
+                            self.insert_open_upvalue_sorted(key, abs_pos);
                         } else {
                             // Transitive capture — copy the upvalue key from
                             // the enclosing closure.
@@ -234,7 +233,7 @@ impl<'c> VM<'c> {
                     let idx = self.read_wide() as usize;
                     let abs_key =
                         self.frames.last().unwrap().closure_upvalues[idx] as usize;
-                    let val = match &self.upvalues[abs_key] {
+                    let val = match self.heap.upvalue(abs_key as u16) {
                         Upvalue::Open(pos) => self.stack[*pos].clone(),
                         Upvalue::Closed(v) => v.clone(),
                     };
@@ -246,7 +245,7 @@ impl<'c> VM<'c> {
                     let abs_key =
                         self.frames.last().unwrap().closure_upvalues[idx] as usize;
                     let val = self.stack()[src].clone();
-                    match &mut self.upvalues[abs_key] {
+                    match self.heap.upvalue_mut(abs_key as u16) {
                         Upvalue::Open(pos) => self.stack[*pos] = val,
                         Upvalue::Closed(v) => *v = val,
                     }
@@ -419,9 +418,9 @@ impl<'c> VM<'c> {
             .copied()
             .collect();
         for key in open_keys {
-            if let Upvalue::Open(pos) = &self.upvalues[key as usize] {
+            if let Upvalue::Open(pos) = self.heap.upvalue(key) {
                 let val = self.stack[*pos].clone();
-                self.upvalues[key as usize] = Upvalue::Closed(val);
+                *self.heap.upvalue_mut(key) = Upvalue::Closed(val);
             }
         }
 
@@ -441,7 +440,7 @@ impl<'c> VM<'c> {
         let pos = frame
             .open_upvalues
             .binary_search_by(|&k| {
-                let up = &self.upvalues[k as usize];
+                let up = self.heap.upvalue(k);
                 let p = match up {
                     Upvalue::Open(p) => *p,
                     Upvalue::Closed(_) => usize::MAX,

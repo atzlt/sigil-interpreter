@@ -131,8 +131,6 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    /// Parse an anonymous closure expression: `fn (args) { body }` or `fn (args) expr`.
-    /// Called from `parse_prefix` after consuming `fn`.
     fn parse_closure_expr(&mut self, target: Option<u8>) -> Result<u8> {
         let args = self.parse_arglist()?;
 

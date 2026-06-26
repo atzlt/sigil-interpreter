@@ -1,6 +1,7 @@
 pub mod chunk;
 pub mod exec;
 mod frame;
+mod heap;
 pub mod opcode;
 pub(super) mod upvalue;
 
