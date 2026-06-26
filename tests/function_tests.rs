@@ -350,3 +350,61 @@ fn test_closure_expr_mutates_outer() {
         Value::Number(3.0)
     );
 }
+
+// ── first-class function tests ──
+
+#[test]
+fn test_fn_stored_in_variable_and_called() {
+    assert_eq!(
+        run_program(r"fn double(x) { return x * 2; } let f = double; return f(21);"),
+        Value::Number(42.0)
+    );
+}
+
+#[test]
+fn test_fn_passed_as_argument() {
+    assert_eq!(
+        run_program(
+            r"fn apply_twice(f, x) { return f(f(x)); } fn double(x) { return x * 2; } return apply_twice(double, 5);"
+        ),
+        Value::Number(20.0)
+    );
+}
+
+#[test]
+fn test_fn_returned_from_function() {
+    assert_eq!(
+        run_program(
+            r"fn make_doubler() { fn double(x) { return x * 2; } return double; } let d = make_doubler(); return d(21);"
+        ),
+        Value::Number(42.0)
+    );
+}
+
+#[test]
+fn test_fn_returned_from_function_captures_param() {
+    assert_eq!(
+        run_program(
+            r"fn make_adder(n) { fn add(x) { return x + n; } return add; } let a5 = make_adder(5); let a10 = make_adder(10); return a5(3) + a10(3);"
+        ),
+        Value::Number(21.0)
+    );
+}
+
+#[test]
+fn test_closure_expr_called_directly() {
+    assert_eq!(
+        run_program(r"return (fn(x) x + 1)(5);"),
+        Value::Number(6.0)
+    );
+}
+
+#[test]
+fn test_closure_expr_as_arg_to_closure() {
+    assert_eq!(
+        run_program(
+            r"fn twice(f, x) { return f(f(x)); } return twice(fn(n) n * 2, 5);"
+        ),
+        Value::Number(20.0)
+    );
+}
