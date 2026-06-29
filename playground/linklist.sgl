@@ -1,0 +1,9 @@
+struct LinkedList {}
+
+struct LinkedList {
+    current: Number,
+    next: LinkedList,
+}
+
+let list = LinkedList(1, LinkedList(2, LinkedList(3, LinkedList(4, nil))));
+return list.next.next.current;

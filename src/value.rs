@@ -23,6 +23,7 @@ pub enum Value {
         fn_id: usize,
         upvalue_count: u16,
     },
+    Struct(u16),
 }
 
 impl PartialEq for Value {
@@ -44,6 +45,7 @@ impl PartialEq for Value {
                     upvalue_count: bc,
                 },
             ) => a == b && ac == bc,
+            (Value::Struct(a), Value::Struct(b)) => a == b,
             _ => false,
         }
     }
@@ -68,6 +70,7 @@ impl Hash for Value {
                 fn_id.hash(state);
                 upvalue_count.hash(state);
             }
+            Value::Struct(k) => k.hash(state),
         }
     }
 }
@@ -82,6 +85,7 @@ impl Value {
             Value::Fn(_) => true,
             Value::Closure { .. } => true,
             Value::FnProto { .. } => true,
+            Value::Struct(_) => true,
         }
     }
 
@@ -110,6 +114,7 @@ impl fmt::Display for Value {
             } => {
                 write!(f, "<proto ƒ_{fn_id:?} {upvalue_count} up>")
             }
+            Value::Struct(key) => write!(f, "struct#{key}"),
         }
     }
 }

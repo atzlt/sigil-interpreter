@@ -5,8 +5,16 @@ use lasso::Spur;
 use strum_macros::{Display, FromRepr};
 
 use crate::value::Value;
+use crate::vm::heap::Heap;
 
-pub type IntrinsicFn = fn(&[&Value]) -> Value;
+/// Context passed to intrinsic functions at runtime.
+/// Currently contains only the heap (for struct field access, value comparison, etc.).
+/// Will be extended as more VM state needs to be exposed to intrinsics.
+pub struct IntrinsicContext<'h> {
+    pub heap: &'h Heap,
+}
+
+pub type IntrinsicFn = fn(&[&Value], &IntrinsicContext) -> Value;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, FromRepr, Display)]
 #[repr(u8)]
@@ -115,100 +123,119 @@ impl FunctionRegistry {
     }
 
     pub fn with_std() -> Self {
-        use self::FnLookupKey::LangItem;
+        use self::FnLookupKey::*;
         use self::LangItem::*;
         let mut reg = Self::default();
 
-        fn add(args: &[&Value]) -> Value {
+        fn add(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
             let a = args[0].as_num();
             let b = args[1].as_num();
             Value::Number(a + b)
         }
-        fn sub(args: &[&Value]) -> Value {
+        fn sub(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
             let a = args[0].as_num();
             let b = args[1].as_num();
             Value::Number(a - b)
         }
-        fn mul(args: &[&Value]) -> Value {
+        fn mul(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
             let a = args[0].as_num();
             let b = args[1].as_num();
             Value::Number(a * b)
         }
-        fn div(args: &[&Value]) -> Value {
+        fn div(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
             let a = args[0].as_num();
             let b = args[1].as_num();
             Value::Number(a / b)
         }
-        fn rem(args: &[&Value]) -> Value {
+        fn rem(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
             let a = args[0].as_num();
             let b = args[1].as_num();
             Value::Number(a % b)
         }
-        fn neg(args: &[&Value]) -> Value {
+        fn neg(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
             Value::Number(-args[0].as_num())
         }
-        fn not(args: &[&Value]) -> Value {
+        fn not(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
             Value::Bool(!args[0].is_truthy())
         }
-        fn eq(args: &[&Value]) -> Value {
-            Value::Bool(args[0] == args[1])
+        fn eq(args: &[&Value], ctx: &IntrinsicContext) -> Value {
+            Value::Bool(values_eq(args[0], args[1], ctx.heap))
         }
-        fn neq(args: &[&Value]) -> Value {
-            Value::Bool(args[0] != args[1])
+        fn neq(args: &[&Value], ctx: &IntrinsicContext) -> Value {
+            Value::Bool(!values_eq(args[0], args[1], ctx.heap))
         }
-        fn lt(args: &[&Value]) -> Value {
+        fn lt(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
             let a = args[0].as_num();
             let b = args[1].as_num();
             Value::Bool(a < b)
         }
-        fn le(args: &[&Value]) -> Value {
+        fn le(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
             let a = args[0].as_num();
             let b = args[1].as_num();
             Value::Bool(a <= b)
         }
-        fn gt(args: &[&Value]) -> Value {
+        fn gt(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
             let a = args[0].as_num();
             let b = args[1].as_num();
             Value::Bool(a > b)
         }
-        fn ge(args: &[&Value]) -> Value {
+        fn ge(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
             let a = args[0].as_num();
             let b = args[1].as_num();
             Value::Bool(a >= b)
         }
-        fn print(args: &[&Value]) -> Value {
+        fn print(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
             let a = args[0];
             println!("{a}");
             Value::Nil
         }
 
         reg.register_intrinsic(LangItem(Add), add);
-        reg.register_intrinsic(FnLookupKey::External("add".into()), add);
+        reg.register_intrinsic(External("add".into()), add);
         reg.register_intrinsic(LangItem(Sub), sub);
-        reg.register_intrinsic(FnLookupKey::External("sub".into()), sub);
+        reg.register_intrinsic(External("sub".into()), sub);
         reg.register_intrinsic(LangItem(Mul), mul);
-        reg.register_intrinsic(FnLookupKey::External("mul".into()), mul);
+        reg.register_intrinsic(External("mul".into()), mul);
         reg.register_intrinsic(LangItem(Div), div);
-        reg.register_intrinsic(FnLookupKey::External("div".into()), div);
+        reg.register_intrinsic(External("div".into()), div);
         reg.register_intrinsic(LangItem(Rem), rem);
-        reg.register_intrinsic(FnLookupKey::External("rem".into()), rem);
+        reg.register_intrinsic(External("rem".into()), rem);
         reg.register_intrinsic(LangItem(Neg), neg);
-        reg.register_intrinsic(FnLookupKey::External("neg".into()), neg);
+        reg.register_intrinsic(External("neg".into()), neg);
         reg.register_intrinsic(LangItem(Not), not);
-        reg.register_intrinsic(FnLookupKey::External("not".into()), not);
+        reg.register_intrinsic(External("not".into()), not);
         reg.register_intrinsic(LangItem(Eq), eq);
-        reg.register_intrinsic(FnLookupKey::External("eq".into()), eq);
+        reg.register_intrinsic(External("eq".into()), eq);
         reg.register_intrinsic(LangItem(Neq), neq);
-        reg.register_intrinsic(FnLookupKey::External("neq".into()), neq);
+        reg.register_intrinsic(External("neq".into()), neq);
         reg.register_intrinsic(LangItem(Lt), lt);
-        reg.register_intrinsic(FnLookupKey::External("lt".into()), lt);
+        reg.register_intrinsic(External("lt".into()), lt);
         reg.register_intrinsic(LangItem(Le), le);
-        reg.register_intrinsic(FnLookupKey::External("le".into()), le);
+        reg.register_intrinsic(External("le".into()), le);
         reg.register_intrinsic(LangItem(Gt), gt);
-        reg.register_intrinsic(FnLookupKey::External("gt".into()), gt);
+        reg.register_intrinsic(External("gt".into()), gt);
         reg.register_intrinsic(LangItem(Ge), ge);
-        reg.register_intrinsic(FnLookupKey::External("ge".into()), ge);
-        reg.register_intrinsic(FnLookupKey::External("print".into()), print);
+        reg.register_intrinsic(External("ge".into()), ge);
+        reg.register_intrinsic(External("print".into()), print);
         reg
+    }
+}
+
+/// Recursive value equality that traverses struct fields via the heap.
+/// Used by the `==` and `!=` intrinsics.
+fn values_eq(a: &Value, b: &Value, heap: &Heap) -> bool {
+    match (a, b) {
+        (Value::Struct(ka), Value::Struct(kb)) => {
+            let sa = heap.struct_ref(*ka);
+            let sb = heap.struct_ref(*kb);
+            if sa.def_id != sb.def_id || sa.fields.len() != sb.fields.len() {
+                return false;
+            }
+            sa.fields
+                .iter()
+                .zip(sb.fields.iter())
+                .all(|(fa, fb)| values_eq(fa, fb, heap))
+        }
+        _ => a == b,
     }
 }

@@ -1,22 +1,22 @@
 use sigil_interpreter::{
     compiler::{CompileError, compile_program_with},
-    functions::{FnLookupKey, FunctionRegistry, LangItem},
+    functions::{FnLookupKey, FunctionRegistry, IntrinsicContext, LangItem, IntrinsicFn},
     value::Value,
     vm::{Chunk, VM},
 };
 
-fn mk_intrinsic(name: &str, f: fn(&[&Value]) -> Value) -> (FnLookupKey, fn(&[&Value]) -> Value) {
+fn mk_intrinsic(name: &str, f: IntrinsicFn) -> (FnLookupKey, IntrinsicFn) {
     (FnLookupKey::External(name.into()), f)
 }
 
 fn mk_lang_item(
     item: LangItem,
-    f: fn(&[&Value]) -> Value,
-) -> (FnLookupKey, fn(&[&Value]) -> Value) {
+    f: IntrinsicFn,
+) -> (FnLookupKey, IntrinsicFn) {
     (FnLookupKey::LangItem(item), f)
 }
 
-fn registry(intrinsics: &[(FnLookupKey, fn(&[&Value]) -> Value)]) -> FunctionRegistry {
+fn registry(intrinsics: &[(FnLookupKey, IntrinsicFn)]) -> FunctionRegistry {
     let mut reg = FunctionRegistry::default();
     for (key, f) in intrinsics {
         reg.register_intrinsic(key.clone(), *f);
@@ -45,55 +45,55 @@ fn print_chunks(chunks: &[Chunk]) {
 
 // ── helpers: intrinsic functions ──
 
-fn add(args: &[&Value]) -> Value {
+fn add(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
     Value::Number(args[0].as_num() + args[1].as_num())
 }
 
-fn sub(args: &[&Value]) -> Value {
+fn sub(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
     Value::Number(args[0].as_num() - args[1].as_num())
 }
 
-fn mul(args: &[&Value]) -> Value {
+fn mul(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
     Value::Number(args[0].as_num() * args[1].as_num())
 }
 
-fn div(args: &[&Value]) -> Value {
+fn div(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
     Value::Number(args[0].as_num() / args[1].as_num())
 }
 
-fn neg(args: &[&Value]) -> Value {
+fn neg(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
     Value::Number(-args[0].as_num())
 }
 
-fn not(args: &[&Value]) -> Value {
+fn not(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
     Value::Bool(!args[0].is_truthy())
 }
 
-fn eq(args: &[&Value]) -> Value {
+fn eq(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
     Value::Bool(args[0] == args[1])
 }
 
-fn neq(args: &[&Value]) -> Value {
+fn neq(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
     Value::Bool(args[0] != args[1])
 }
 
-fn lt(args: &[&Value]) -> Value {
+fn lt(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
     Value::Bool(args[0].as_num() < args[1].as_num())
 }
 
-fn le(args: &[&Value]) -> Value {
+fn le(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
     Value::Bool(args[0].as_num() <= args[1].as_num())
 }
 
-fn gt(args: &[&Value]) -> Value {
+fn gt(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
     Value::Bool(args[0].as_num() > args[1].as_num())
 }
 
-fn ge(args: &[&Value]) -> Value {
+fn ge(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
     Value::Bool(args[0].as_num() >= args[1].as_num())
 }
 
-fn rem(args: &[&Value]) -> Value {
+fn rem(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
     Value::Number(args[0].as_num() % args[1].as_num())
 }
 
@@ -274,7 +274,7 @@ fn test_unknown_modifier() {
 #[test]
 fn test_intrinsic_custom_name() {
     // Register an intrinsic with a custom name, declare it in source
-    let custom = |args: &[&Value]| -> Value { Value::Number(args[0].as_num() * 100.0) };
+    let custom = |args: &[&Value], _ctx: &IntrinsicContext| -> Value { Value::Number(args[0].as_num() * 100.0) };
     let reg = registry(&[mk_intrinsic("make_big", custom)]);
     assert_eq!(
         run_with("@intrinsic fn make_big(x); return make_big(5);", reg,),

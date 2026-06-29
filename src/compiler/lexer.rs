@@ -48,6 +48,8 @@ pub enum Token {
     In,
     #[token("return")]
     Return,
+    #[token("struct")]
+    Struct,
     #[regex("true|false", |lex| lex.slice() == "true")]
     BooleanLit(bool),
     #[token("nil")]
@@ -151,6 +153,7 @@ impl fmt::Display for Token {
             Token::For => write!(f, "for"),
             Token::In => write!(f, "in"),
             Token::Return => write!(f, "return"),
+            Token::Struct => write!(f, "struct"),
             Token::BooleanLit(_) => write!(f, "BOOLEAN"),
             Token::Nil => write!(f, "nil"),
             Token::And => write!(f, "and"),

@@ -223,7 +223,40 @@ impl fmt::Display for Chunk {
                 NEWSTRUCT => {
                     let dst = code[pos];
                     pos += 1;
-                    writeln!(f, "NEWSTRUCT R{dst}")?;
+                    let def_id = u16::from_le_bytes([code[pos], code[pos + 1]]);
+                    pos += 2;
+                    let count = code[pos] as usize;
+                    pos += 1;
+                    let mut fields = Vec::with_capacity(count);
+                    for _ in 0..count {
+                        let name_k = u16::from_le_bytes([code[pos], code[pos + 1]]);
+                        pos += 2;
+                        let reg = code[pos];
+                        pos += 1;
+                        let name = self.constants.get(name_k).to_string();
+                        fields.push(format!("{name}: R{reg}"));
+                    }
+                    writeln!(f, "NEWSTRUCT R{dst} def#{def_id} [{}]", fields.join(", "))?;
+                }
+                GETFIELD => {
+                    let dst = code[pos];
+                    pos += 1;
+                    let obj = code[pos];
+                    pos += 1;
+                    let name_k = u16::from_le_bytes([code[pos], code[pos + 1]]);
+                    pos += 2;
+                    let name = self.constants.get(name_k).to_string();
+                    writeln!(f, "GETFIELD R{dst} R{obj}.{name}")?;
+                }
+                SETFIELD => {
+                    let obj = code[pos];
+                    pos += 1;
+                    let name_k = u16::from_le_bytes([code[pos], code[pos + 1]]);
+                    pos += 2;
+                    let src = code[pos];
+                    pos += 1;
+                    let name = self.constants.get(name_k).to_string();
+                    writeln!(f, "SETFIELD R{obj}.{name} R{src}")?;
                 }
                 GETUPVAL => {
                     let dst = code[pos];

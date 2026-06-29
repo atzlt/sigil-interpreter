@@ -4,6 +4,7 @@ use crate::{
     compiler::{
         compile::{CompileError, Compiler, Result},
         lexer::Token,
+        type_registry::TypeId,
     },
     emit, emit_args,
     functions::{FnLookupKey, FnModifier, LangItem},
@@ -35,6 +36,11 @@ impl<'a> Compiler<'a> {
         match self.current() {
             Token::Let => self.parse_let_decl(),
             Token::Fn => self.parse_fn_decl(Vec::new()),
+            Token::Struct => self.parse_struct_decl(),
+            Token::Semicolon => {
+                self.advance()?;
+                Ok(())
+            }
             Token::At => {
                 let mut modifiers = Vec::new();
                 while self.current() == Token::At {
@@ -50,9 +56,13 @@ impl<'a> Compiler<'a> {
             Token::If => self.parse_if(),
             Token::While => self.parse_while(),
             Token::Identifier(id) => {
-                if self.peek()? == &Token::Assign {
-                    self.advance()?;
-                    self.parse_assign(id)
+                // Peek to distinguish: `id = ...` or `id.field... = ...` or expr stmt
+                let next = *self.peek()?;
+                if next == Token::Assign || next == Token::Dot {
+                    self.advance()?; // consume identifier
+                    self.parse_assign_lhs(id)?;
+                    self.consume(&Token::Semicolon)?;
+                    Ok(())
                 } else {
                     self.parse_expr_stmt()
                 }
@@ -192,6 +202,93 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
+    fn parse_struct_decl(&mut self) -> Result<()> {
+        self.consume(&Token::Struct)?;
+
+        let name = if let Token::Identifier(spur) = self.current() {
+            let name = spur;
+            self.advance()?;
+            name
+        } else {
+            return Err(CompileError::Unexpected {
+                token: self.current(),
+                diag: (
+                    self.current_span().clone(),
+                    format!("expected struct name, found {}", self.current()),
+                ),
+            });
+        };
+
+        // {
+        self.consume(&Token::LBrace)?;
+
+        let mut fields: Vec<(Spur, TypeId)> = Vec::new();
+        while !self.check(&Token::RBrace) && !self.check(&Token::Eof) {
+            let field_name = if let Token::Identifier(spur) = self.current() {
+                let n = spur;
+                self.advance()?;
+                n
+            } else {
+                return Err(CompileError::Unexpected {
+                    token: self.current(),
+                    diag: (
+                        self.current_span().clone(),
+                        format!("expected field name, found {}", self.current()),
+                    ),
+                });
+            };
+
+            // :
+            self.consume(&Token::Colon)?;
+
+            let type_name = if let Token::Identifier(spur) = self.current() {
+                let tn = spur;
+                self.advance()?;
+                tn
+            } else {
+                return Err(CompileError::Unexpected {
+                    token: self.current(),
+                    diag: (
+                        self.current_span().clone(),
+                        format!("expected type name, found {}", self.current()),
+                    ),
+                });
+            };
+
+            let type_name_str = self.intern_resolve(&type_name);
+            let type_id = self
+                .type_registry
+                .resolve_builtin_type_name(type_name_str)
+                .or_else(|| {
+                    // Also try resolving as a previously-declared struct name
+                    self.type_registry
+                        .resolve_struct(type_name)
+                        .map(TypeId::Struct)
+                })
+                .ok_or_else(|| CompileError::Unexpected {
+                    token: Token::Identifier(type_name),
+                    diag: (
+                        self.prev_span().clone(),
+                        format!("unknown type: {type_name_str}"),
+                    ),
+                })?;
+
+            fields.push((field_name, type_id));
+
+            if self.check(&Token::Comma) {
+                self.advance()?;
+            } else {
+                break;
+            }
+        }
+
+        self.consume(&Token::RBrace)?;
+
+        self.type_registry.declare_struct(name, fields);
+
+        Ok(())
+    }
+
     fn parse_modifier(&mut self) -> Result<FnModifier> {
         let spur = if let Token::Identifier(spur) = self.current() {
             self.advance()?;
@@ -258,9 +355,47 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn parse_assign(&mut self, id: Identifier) -> Result<()> {
+    fn parse_assign_lhs(&mut self, id: Identifier) -> Result<()> {
         let span = self.prev_span().clone();
-        self.advance()?;
+
+        if self.check(&Token::Assign) {
+            self.advance()?;
+            return self.emit_simple_assign(id, span);
+        }
+
+        let mut fields: Vec<Spur> = Vec::new();
+        loop {
+            self.consume(&Token::Dot)?; // consume '.'
+            let field = if let Token::Identifier(spur) = self.current() {
+                let s = spur;
+                self.advance()?;
+                s
+            } else {
+                return Err(CompileError::Unexpected {
+                    token: self.current(),
+                    diag: (
+                        self.current_span().clone(),
+                        format!("expected field name after '.', found {}", self.current()),
+                    ),
+                });
+            };
+            fields.push(field);
+
+            if self.check(&Token::Assign) {
+                self.advance()?;
+                return self.emit_field_chain_assign(id, &fields);
+            }
+            if !self.check(&Token::Dot) {
+                // without '=' — treat as expression statement.
+                let reg = self.emit_field_chain_get(id, &fields)?;
+                self.frame_mut().regs.free_temp(reg);
+                return Ok(());
+            }
+        }
+    }
+
+    /// Emit a simple assignment: `id = expr`.
+    fn emit_simple_assign(&mut self, id: Identifier, span: std::ops::Range<usize>) -> Result<()> {
         if let Some(local) = self.try_resolve_local(id) {
             let reg = self.expression(Some(local))?;
             self.emit_move(local, reg);
@@ -279,7 +414,6 @@ impl<'a> Compiler<'a> {
                 diag: (span, "undefined variable".to_string()),
             });
         }
-        self.consume(&Token::Semicolon)?;
         Ok(())
     }
 

@@ -4,12 +4,12 @@ use smallvec::SmallVec;
 use thiserror::Error;
 
 use crate::{
-    functions::{FnEntry, FunctionRegistry},
+    functions::{FnEntry, FunctionRegistry, IntrinsicContext},
     value::Value,
     vm::{
         Chunk, OpCode,
         frame::{CallFrame, StackWindow, StackWindowMut},
-        heap::Heap,
+        heap::{Heap, StructObject},
         upvalue::Upvalue,
     },
 };
@@ -225,8 +225,88 @@ impl<'c> VM<'c> {
                     };
                 }
                 NEWSTRUCT => {
-                    let span = self.locus_span();
-                    return Err(RuntimeError::InvalidOpCode { op_byte, span });
+                    let dst = self.read() as usize;
+                    let def_id = self.read_wide();
+                    let count = self.read() as usize;
+
+                    let mut field_names: Vec<String> = Vec::with_capacity(count);
+                    let mut field_values: Vec<Value> = Vec::with_capacity(count);
+
+                    for _ in 0..count {
+                        let name_k = self.read_wide() as usize;
+                        let reg = self.read() as usize;
+                        let name = match self.chunk().constants.get(name_k as u16) {
+                            Value::String(s) => s.clone(),
+                            other => other.to_string(),
+                        };
+                        field_names.push(name);
+                        field_values.push(self.stack()[reg].clone());
+                    }
+
+                    self.heap.ensure_struct_def(def_id, field_names);
+                    let key = self.heap.push_struct(StructObject {
+                        def_id,
+                        fields: field_values.into_boxed_slice(),
+                    });
+                    self.stack_mut()[dst] = Value::Struct(key);
+                }
+                GETFIELD => {
+                    let dst = self.read() as usize;
+                    let obj_reg = self.read() as usize;
+                    let name_k = self.read_wide() as usize;
+
+                    let field_name = match self.chunk().constants.get(name_k as u16) {
+                        Value::String(s) => s.clone(),
+                        other => other.to_string(),
+                    };
+
+                    let key = match &self.stack()[obj_reg] {
+                        Value::Struct(k) => *k,
+                        _ => {
+                            return Err(RuntimeError::InvalidOpCode {
+                                op_byte,
+                                span: self.locus_span(),
+                            });
+                        }
+                    };
+
+                    let sobj = self.heap.struct_ref(key);
+                    let idx = self.heap.struct_field_index(sobj.def_id, &field_name)
+                        .ok_or_else(|| RuntimeError::InvalidOpCode {
+                            op_byte,
+                            span: self.locus_span(),
+                        })?;
+
+                    self.stack_mut()[dst] = sobj.fields[idx].clone();
+                }
+                SETFIELD => {
+                    let obj_reg = self.read() as usize;
+                    let name_k = self.read_wide() as usize;
+                    let src_reg = self.read() as usize;
+
+                    let field_name = match self.chunk().constants.get(name_k as u16) {
+                        Value::String(s) => s.clone(),
+                        other => other.to_string(),
+                    };
+
+                    let key = match &self.stack()[obj_reg] {
+                        Value::Struct(k) => *k,
+                        _ => {
+                            return Err(RuntimeError::InvalidOpCode {
+                                op_byte,
+                                span: self.locus_span(),
+                            });
+                        }
+                    };
+
+                    let sobj = self.heap.struct_ref(key);
+                    let idx = self.heap.struct_field_index(sobj.def_id, &field_name)
+                        .ok_or_else(|| RuntimeError::InvalidOpCode {
+                            op_byte,
+                            span: self.locus_span(),
+                        })?;
+
+                    self.heap.struct_mut(key).fields[idx] = self.stack()[src_reg].clone();
                 }
                 GETUPVAL => {
                     let dst = self.read() as usize;
@@ -279,7 +359,8 @@ impl<'c> VM<'c> {
                 for &reg in regs {
                     arg_refs.push(&self.stack[reg_offset + reg as usize]);
                 }
-                let result = func(&arg_refs);
+                let ctx = IntrinsicContext { heap: &self.heap };
+                let result = func(&arg_refs, &ctx);
                 drop(arg_refs);
                 self.stack_mut()[dst] = result;
             }

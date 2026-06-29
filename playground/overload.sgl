@@ -1,0 +1,10 @@
+struct Vec2 { x: Number, y: Number }
+
+@lang_item(mul)
+fn add_vec(v, w) {
+    return Vec2(v.x + w.x, v.y + w.y);
+}
+
+let a = Vec2(1, 2);
+let b = Vec2(3, 4);
+return (a * b).y;

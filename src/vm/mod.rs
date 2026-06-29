@@ -1,10 +1,11 @@
 pub mod chunk;
 pub mod exec;
 mod frame;
-mod heap;
+pub mod heap;
 pub mod opcode;
-pub(super) mod upvalue;
+pub mod upvalue;
 
 pub use chunk::Chunk;
 pub use exec::VM;
+pub use heap::{Heap, StructObject};
 pub use opcode::OpCode;

@@ -6,10 +6,11 @@ use thiserror::Error;
 
 use crate::{
     compiler::{
-        label::{Label, LabelTracker, RefKind},
+        label::{LabelTracker},
         lexer::Token,
         loop_tracker::LoopTracker,
         register::RegisterTracker,
+        type_registry::TypeRegistry,
         variables::{GlobalStore, LocalsTracker},
     },
     functions::{FnLookupKey, FunctionRegistry},
@@ -135,6 +136,12 @@ pub enum CompileError {
     UndefinedVariable { name: String, diag: SpanInfo },
     #[error("undefined function: {name}")]
     UndefinedFunction { name: String, diag: SpanInfo },
+    #[error("missing field '{field}' in struct '{struct_name}'")]
+    MissingField {
+        field: String,
+        struct_name: String,
+        diag: SpanInfo,
+    },
     #[error("{count} compile errors", count = .0.len())]
     Multiple(Vec<CompileError>),
 }
@@ -157,6 +164,7 @@ pub struct Compiler<'a> {
     pub(super) tokens: TokenCursor,
     pub(super) globals: GlobalStore,
     pub(super) funcs: FunctionRegistry,
+    pub(super) type_registry: TypeRegistry,
     pub(super) frames: Vec<CompilerFrame>,
     /// Counter for anonymous closure IDs.
     anon_counter: u32,
@@ -170,6 +178,7 @@ pub(super) fn new_compiler(source: &str, funcs: FunctionRegistry) -> Compiler<'_
         tokens: TokenCursor::new(),
         globals: GlobalStore::default(),
         funcs,
+        type_registry: TypeRegistry::new(),
         frames: vec![CompilerFrame::new(0, &[])],
         anon_counter: 0,
         errors: Vec::new(),
@@ -282,7 +291,8 @@ impl Compiler<'_> {
                 | Token::Return
                 | Token::Break
                 | Token::Continue
-                | Token::At => {
+                | Token::At
+                | Token::Struct => {
                     self.advance().unwrap();
                     break;
                 }
@@ -343,128 +353,11 @@ impl Compiler<'_> {
         self.funcs.get_id(name)
     }
 
-    pub(super) fn emit_safety_net(&mut self) -> Result<()> {
-        let nil_reg = self.alloc_temp()?;
-        emit!(self.chunk_mut(), LOADNIL, nil_reg);
-        emit!(self.chunk_mut(), RETURN, nil_reg);
-        Ok(())
-    }
-
-    pub(super) fn emit_move(&mut self, dst: u8, src: u8) {
-        if dst != src {
-            emit!(self.chunk_mut(), MOVE, dst, src);
-        }
-    }
-
-    pub(super) fn target_or_reuse(&mut self, target: Option<u8>, sources: &[u8]) -> Result<u8> {
-        if let Some(t) = target {
-            Ok(t)
-        } else {
-            self.reuse_or_alloc(sources)
-        }
-    }
-
-    pub(super) fn emit_callk(&mut self, dst: u8, fn_slot: usize, frame_offset: u8, args: &[u8]) {
-        let argc = args.len();
-        emit!(self.chunk_mut(), CALLK, dst, wide fn_slot as u16, frame_offset, argc);
-        self.chunk_mut().append(args);
-    }
-
-    pub(super) fn emit_call(&mut self, dst: u8, reg: u8, frame_offset: u8, args: &[u8]) {
-        let argc = args.len();
-        emit!(self.chunk_mut(), CALL, dst, reg, frame_offset, argc);
-        self.chunk_mut().append(args);
-    }
-
     /// Allocate a unique ID for an anonymous closure.
     pub(super) fn next_anon_id(&mut self) -> u32 {
         let id = self.anon_counter;
         self.anon_counter += 1;
         id
-    }
-
-    /// Emit a `CLOSURE` instruction: reads `FnProto` from the constant pool,
-    /// captures upvalues, and stores the resulting closure in a local register.
-    pub(super) fn emit_closure(
-        &mut self,
-        name: Spur,
-        proto_idx: u16,
-        upvalues: &[UpvalueDescriptor],
-    ) -> Result<()> {
-        let reg = self.alloc_held()?;
-        emit!(self.chunk_mut(), CLOSURE, reg, wide proto_idx);
-        for uv in upvalues {
-            self.chunk_mut().emit(uv.is_local as u8);
-            self.chunk_mut().emit(uv.index);
-        }
-        self.add_local(name, reg);
-        Ok(())
-    }
-
-    /// Emit a `CLOSURE` for an anonymous closure expression.
-    /// Returns a temp register holding the resulting `Value::Closure`.
-    pub(super) fn emit_closure_temp(
-        &mut self,
-        proto_idx: u16,
-        upvalues: &[UpvalueDescriptor],
-    ) -> Result<u8> {
-        let reg = self.alloc_temp()?;
-        emit!(self.chunk_mut(), CLOSURE, reg, wide proto_idx);
-        for uv in upvalues {
-            self.chunk_mut().emit(uv.is_local as u8);
-            self.chunk_mut().emit(uv.index);
-        }
-        Ok(reg)
-    }
-
-    pub(super) fn new_label(&mut self) -> Label {
-        self.frame_mut().labels.alloc()
-    }
-
-    pub(super) fn emit_forward_test(&mut self, reg: u8) -> Label {
-        let label = self.frame_mut().labels.alloc();
-        let ip = self.chunk().end();
-        emit!(self.chunk_mut(), TEST, reg, wide 0);
-        self.frame_mut().labels.add_ref(label, ip, RefKind::Test);
-        label
-    }
-
-    pub(super) fn emit_forward_jmp(&mut self) -> Label {
-        let label = self.frame_mut().labels.alloc();
-        let ip = self.chunk().end();
-        emit!(self.chunk_mut(), JMP, wide 0);
-        self.frame_mut().labels.add_ref(label, ip, RefKind::Jmp);
-        label
-    }
-
-    pub(super) fn emit_forward_jmp_to(&mut self, label: Label) {
-        let ip = self.chunk().end();
-        emit!(self.chunk_mut(), JMP, wide 0);
-        self.frame_mut().labels.add_ref(label, ip, RefKind::Jmp);
-    }
-
-    pub(super) fn emit_here_label(&mut self) -> Label {
-        let label = self.frame_mut().labels.alloc();
-        let ip = self.chunk().end();
-        let chunk_idx = self.frame().chunk_idx;
-        let labels = &mut self.frames.last_mut().unwrap().labels;
-        labels.resolve(label, ip, &mut self.chunks[chunk_idx]);
-        label
-    }
-
-    pub(super) fn emit_jmp_to(&mut self, label: Label) {
-        let target = self.frame().labels.ip_of(label);
-        let ip = self.chunk().end();
-        let offset = target as isize - ip as isize;
-        let bytes = (offset as i16).to_le_bytes();
-        emit!(self.chunk_mut(), JMP, bytes[0], bytes[1]);
-    }
-
-    pub(super) fn place_label(&mut self, label: Label) {
-        let target_ip = self.chunk().end();
-        let chunk_idx = self.frame().chunk_idx;
-        let labels = &mut self.frames.last_mut().unwrap().labels;
-        labels.resolve(label, target_ip, &mut self.chunks[chunk_idx]);
     }
 
     /// Returns the chunk index.
@@ -509,7 +402,7 @@ pub(super) struct CompilerFrame {
     pub(super) loops: LoopTracker,
     pub(super) labels: LabelTracker,
     pub(super) upvalues: Vec<UpvalueDescriptor>,
-    chunk_idx: usize,
+    pub(super) chunk_idx: usize,
 }
 
 impl CompilerFrame {

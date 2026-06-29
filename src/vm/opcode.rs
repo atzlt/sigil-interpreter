@@ -17,6 +17,8 @@ pub enum OpCode {
     TEST,
     CLOSURE,
     NEWSTRUCT,
+    GETFIELD,
+    SETFIELD,
     GETUPVAL,
     SETUPVAL,
 }
