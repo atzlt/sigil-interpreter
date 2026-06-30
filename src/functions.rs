@@ -146,7 +146,7 @@ impl FunctionRegistry {
     ///   Exact match:   cost 0
     ///   Subtype match: cost 1
     ///   Type mismatch: disqualifies
-    /// The overload with the lowest total cost wins.
+    /// The overload with the lowest total cost wins. This algorithm short-circuits on the first exact match.
     pub fn resolve_overload(
         &self,
         name: &FnLookupKey,
@@ -169,7 +169,7 @@ impl FunctionRegistry {
                 if p == a {
                     // exact match: cost 0
                 } else if *p == TypeId::Any {
-                    cost += 1; // wildcard match
+                    cost += 1;
                 } else {
                     ok = false;
                     break;
@@ -178,6 +178,9 @@ impl FunctionRegistry {
             if ok && cost < best_cost {
                 best_cost = cost;
                 best_id = fn_id;
+                if cost == 0 {
+                    break; // exact match found, no need to continue
+                }
             }
         }
         if best_cost < u32::MAX { Some(best_id) } else { None }
