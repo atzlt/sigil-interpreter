@@ -8,15 +8,18 @@ use sigil_interpreter::{
     value::Value,
     vm::VM,
 };
+use smallvec::SmallVec;
 
 /// Build a custom `FunctionRegistry` with the given intrinsics.
-fn custom_registry(entries: &[(&str, IntrinsicFn, Vec<TypeId>)]) -> FunctionRegistry {
+fn custom_registry(entries: &[(&str, IntrinsicFn, SmallVec<[TypeId; 4]>)]) -> FunctionRegistry {
     let mut reg = FunctionRegistry::default();
     for &(name, func, ref types) in entries {
         reg.register(
             FnLookupKey::External(name.into()),
             FnEntry::Intrinsic(func),
-            FnTypeSig { param_types: types.clone() },
+            FnTypeSig {
+                param_types: types.clone(),
+            },
         );
     }
     reg
@@ -49,9 +52,7 @@ fn test_intrinsic_unary() {
 #[test]
 fn test_intrinsic_expression() {
     assert_eq!(
-        run_program(
-            "@intrinsic fn add(a, b); @intrinsic fn mul(a, b); return mul(add(2, 3), 4);"
-        ),
+        run_program("@intrinsic fn add(a, b); @intrinsic fn mul(a, b); return mul(add(2, 3), 4);"),
         Value::Number(20.0)
     );
 }
@@ -59,9 +60,7 @@ fn test_intrinsic_expression() {
 #[test]
 fn test_intrinsic_chained() {
     assert_eq!(
-        run_program(
-            "@intrinsic fn sub(a, b); @intrinsic fn neg(x); return sub(neg(5), 3);"
-        ),
+        run_program("@intrinsic fn sub(a, b); @intrinsic fn neg(x); return sub(neg(5), 3);"),
         Value::Number(-8.0)
     );
 }
@@ -101,7 +100,9 @@ fn test_lang_item_overrides_operator() {
 fn test_lang_item_add_override() {
     // + now calls plus (same Number signature overwrites built-in)
     assert_eq!(
-        run_program(r"@lang_item(add) fn plus(a: Number, b: Number) { return a - b; } return 1 + 2;"),
+        run_program(
+            r"@lang_item(add) fn plus(a: Number, b: Number) { return a - b; } return 1 + 2;"
+        ),
         Value::Number(-1.0)
     );
 }
@@ -109,9 +110,7 @@ fn test_lang_item_add_override() {
 #[test]
 fn test_lang_item_and_call_by_name() {
     assert_eq!(
-        run_program(
-            r"@lang_item(add) fn plus(a, b) { return a - b; } return plus(10, 3);"
-        ),
+        run_program(r"@lang_item(add) fn plus(a, b) { return a - b; } return plus(10, 3);"),
         Value::Number(7.0)
     );
 }
@@ -134,8 +133,9 @@ fn test_intrinsic_only_does_not_register_lang_item() {
         Value::Number(args[0].as_num() + args[1].as_num())
     }
     let reg = custom_registry(&[(
-        "my_add", my_add as IntrinsicFn,
-        vec![TypeId::Any, TypeId::Any],
+        "my_add",
+        my_add as IntrinsicFn,
+        smallvec::smallvec![TypeId::Any, TypeId::Any],
     )]);
     assert_eq!(
         run_with("@intrinsic fn my_add(a, b); return my_add(5, 7);", reg),
@@ -163,8 +163,9 @@ fn test_intrinsic_custom_name() {
         Value::Number(args[0].as_num() * 100.0)
     }
     let reg = custom_registry(&[(
-        "make_big", make_big as IntrinsicFn,
-        vec![TypeId::Any],
+        "make_big",
+        make_big as IntrinsicFn,
+        smallvec::smallvec![TypeId::Any],
     )]);
     assert_eq!(
         run_with("@intrinsic fn make_big(x); return make_big(5);", reg),

@@ -105,12 +105,8 @@ impl Value {
             Value::Bool(_) => TypeId::Bool,
             Value::Number(_) => TypeId::Number,
             Value::String(_) => TypeId::String,
-            Value::Fn(_) | Value::Closure { .. } | Value::FnProto { .. } => {
-                TypeId::Fn
-            }
-            Value::Struct(key) => {
-                TypeId::Struct(heap.struct_ref(*key).def_id)
-            }
+            Value::Fn(_) | Value::Closure { .. } | Value::FnProto { .. } => TypeId::Fn,
+            Value::Struct(key) => TypeId::Struct(heap.struct_ref(*key).def_id),
         }
     }
 }

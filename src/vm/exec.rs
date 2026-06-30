@@ -329,6 +329,8 @@ impl<'c> VM<'c> {
         }
     }
 
+    /// Handle function calls.
+    /// TODO: runtime overload dispatch caching.
     fn handle_call(
         &mut self,
         chunks: &'c [Chunk],
@@ -349,7 +351,7 @@ impl<'c> VM<'c> {
 
         let key = registry.resolve_id(static_id);
         let resolved_id = registry
-            .resolve_overload(&key, &args, &self.heap)
+            .resolve_overload(key, &args, &self.heap)
             .ok_or_else(|| RuntimeError::NoMatchingOverload {
                 name: key.to_string(),
                 span: self.locus_span(),

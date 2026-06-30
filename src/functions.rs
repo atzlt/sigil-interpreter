@@ -2,15 +2,16 @@ use std::fmt;
 
 use ahash::AHashMap;
 use lasso::Spur;
+use smallvec::{SmallVec, smallvec};
 use strum_macros::{Display, FromRepr};
 
-use crate::types::{TypeId};
+use crate::types::TypeId;
 use crate::value::Value;
 use crate::vm::heap::Heap;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct FnTypeSig {
-    pub param_types: Vec<TypeId>,
+    pub param_types: SmallVec<[TypeId; 4]>,
 }
 
 #[derive(Debug, Clone)]
@@ -146,7 +147,7 @@ impl FunctionRegistry {
     ///   Exact match:   cost 0
     ///   Subtype match: cost 1
     ///   Type mismatch: disqualifies
-    /// The overload with the lowest total cost wins. This algorithm short-circuits on the first exact match.
+    /// The overload with the lowest total cost wins.
     pub fn resolve_overload(
         &self,
         name: &FnLookupKey,
@@ -154,7 +155,23 @@ impl FunctionRegistry {
         heap: &Heap,
     ) -> Option<usize> {
         let overloads = self.get_overloads(name)?;
-        let arg_types: Vec<TypeId> = args.iter().map(|v| v.type_id(heap)).collect();
+
+        // ── Fast path: single overload ──
+        if overloads.overloads.len() == 1 {
+            let (sig, &fn_id) = overloads.overloads.iter().next().unwrap();
+            if sig.param_types.len() != args.len() {
+                return None;
+            }
+            for (p, a) in sig.param_types.iter().zip(args.iter()) {
+                if *p != TypeId::Any && *p != a.type_id(heap) {
+                    return None;
+                }
+            }
+            return Some(fn_id);
+        }
+
+        // ── Multi-overload: least-cost matching ──
+        let arg_types: SmallVec<[TypeId; 4]> = args.iter().map(|v| v.type_id(heap)).collect();
 
         let mut best_cost: u32 = u32::MAX;
         let mut best_id: usize = 0;
@@ -169,7 +186,7 @@ impl FunctionRegistry {
                 if p == a {
                     // exact match: cost 0
                 } else if *p == TypeId::Any {
-                    cost += 1;
+                    cost += 1; // subtype cast
                 } else {
                     ok = false;
                     break;
@@ -183,13 +200,17 @@ impl FunctionRegistry {
                 }
             }
         }
-        if best_cost < u32::MAX { Some(best_id) } else { None }
+        if best_cost < u32::MAX {
+            Some(best_id)
+        } else {
+            None
+        }
     }
 
     pub fn with_std() -> Self {
+        use self::FnEntry::Intrinsic;
         use self::FnLookupKey::*;
         use self::LangItem::*;
-        use self::FnEntry::Intrinsic;
         let mut reg = Self::default();
 
         fn add(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
@@ -256,16 +277,16 @@ impl FunctionRegistry {
         }
 
         let num_bin_sig = FnTypeSig {
-            param_types: vec![TypeId::Number, TypeId::Number],
+            param_types: smallvec![TypeId::Number, TypeId::Number],
         };
         let num_un_sig = FnTypeSig {
-            param_types: vec![TypeId::Number],
+            param_types: smallvec![TypeId::Number],
         };
         let any_un_sig = FnTypeSig {
-            param_types: vec![TypeId::Any],
+            param_types: smallvec![TypeId::Any],
         };
         let any_bin_sig = FnTypeSig {
-            param_types: vec![TypeId::Any, TypeId::Any],
+            param_types: smallvec![TypeId::Any, TypeId::Any],
         };
 
         reg.register(LangItem(Add), Intrinsic(add), num_bin_sig.clone());
@@ -294,7 +315,11 @@ impl FunctionRegistry {
         reg.register(External("gt".into()), Intrinsic(gt), num_bin_sig.clone());
         reg.register(LangItem(Ge), Intrinsic(ge), num_bin_sig.clone());
         reg.register(External("ge".into()), Intrinsic(ge), num_bin_sig.clone());
-        reg.register(External("print".into()), Intrinsic(print), any_un_sig.clone());
+        reg.register(
+            External("print".into()),
+            Intrinsic(print),
+            any_un_sig.clone(),
+        );
         reg
     }
 }

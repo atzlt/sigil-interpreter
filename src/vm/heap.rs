@@ -57,9 +57,12 @@ impl Heap {
     pub fn ensure_struct_def(&mut self, def_id: u16, field_names: Vec<String>) {
         let idx = def_id as usize;
         if idx >= self.struct_defs.len() {
-            self.struct_defs.resize(idx + 1, StructDefHeader {
-                field_names: Vec::new(),
-            });
+            self.struct_defs.resize(
+                idx + 1,
+                StructDefHeader {
+                    field_names: Vec::new(),
+                },
+            );
         }
         if self.struct_defs[idx].field_names.is_empty() {
             self.struct_defs[idx].field_names = field_names;

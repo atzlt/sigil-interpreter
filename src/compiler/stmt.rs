@@ -4,7 +4,11 @@ use crate::{
     compiler::{
         compile::{CompileError, Compiler, Result},
         lexer::Token,
-    }, emit, emit_args, functions::{FnLookupKey, FnModifier, FnTypeSig, LangItem}, types::TypeId, value::Value,
+    },
+    emit, emit_args,
+    functions::{FnLookupKey, FnModifier, FnTypeSig, LangItem},
+    types::TypeId,
+    value::Value,
 };
 
 type Identifier = Spur;
@@ -588,10 +592,7 @@ impl Compiler<'_> {
                 } else {
                     Err(CompileError::Unexpected {
                         token: Token::Identifier(type_spur),
-                        diag: (
-                            self.prev_span().clone(),
-                            format!("unknown type: {name}"),
-                        ),
+                        diag: (self.prev_span().clone(), format!("unknown type: {name}")),
                     })
                 }
             }

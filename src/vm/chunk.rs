@@ -199,9 +199,7 @@ impl fmt::Display for Chunk {
                     write!(f, "CLOSURE R{dst} K{proto}")?;
                     // Read upvalue_count from the FnProto constant so we can
                     // skip the per-upvalue descriptors and show them.
-                    if let Value::FnProto { upvalue_count, .. } =
-                        self.constants.get(proto)
-                    {
+                    if let Value::FnProto { upvalue_count, .. } = self.constants.get(proto) {
                         let n = *upvalue_count as usize;
                         let mut parts = Vec::with_capacity(n);
                         for _ in 0..n {

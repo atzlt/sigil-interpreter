@@ -208,15 +208,16 @@ impl<'a> Compiler<'a> {
         // 2. Not a local — if the enclosing frame itself has enclosing scopes,
         //    recurse so it can capture the variable first.
         if depth >= 2
-            && let Some(parent_up) = self.resolve_upvalue_at(depth - 1, name) {
-                let idx = self.frames[depth].upvalues.len() as u8;
-                self.frames[depth].upvalues.push(UpvalueDescriptor {
-                    name,
-                    is_local: false,
-                    index: parent_up,
-                });
-                return Some(idx);
-            }
+            && let Some(parent_up) = self.resolve_upvalue_at(depth - 1, name)
+        {
+            let idx = self.frames[depth].upvalues.len() as u8;
+            self.frames[depth].upvalues.push(UpvalueDescriptor {
+                name,
+                is_local: false,
+                index: parent_up,
+            });
+            return Some(idx);
+        }
 
         None
     }

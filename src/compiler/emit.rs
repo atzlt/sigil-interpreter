@@ -2,8 +2,13 @@ use lasso::Spur;
 
 use crate::{
     compiler::{
-        compile::{CompileError, Compiler, Result}, label::Label,
-    }, emit, emit_args, functions::FnLookupKey, types::StructDef, value::Value,
+        compile::{CompileError, Compiler, Result},
+        label::Label,
+    },
+    emit, emit_args,
+    functions::FnLookupKey,
+    types::StructDef,
+    value::Value,
 };
 
 // ── Value constructors ──
@@ -131,13 +136,7 @@ impl<'a> Compiler<'a> {
     // ── Structs ──
 
     /// Emit a NEWSTRUCT instruction.
-    pub(super) fn emit_newstruct(
-        &mut self,
-        dst: u8,
-        def_id: u16,
-        def: &StructDef,
-        regs: &[u8],
-    ) {
+    pub(super) fn emit_newstruct(&mut self, dst: u8, def_id: u16, def: &StructDef, regs: &[u8]) {
         emit!(self.chunk_mut(), NEWSTRUCT, dst, wide def_id, regs.len());
         for (i, &reg) in regs.iter().enumerate() {
             let name_str = self.intern_resolve(&def.fields[i].0).to_string();
@@ -169,11 +168,7 @@ impl<'a> Compiler<'a> {
     /// Emit a chain of GETFIELD operations for a read expression like `v.x.re`.
     /// `base_name` is the root variable, `fields` is the chain of field names.
     /// Returns the final register holding the innermost field value.
-    pub(super) fn emit_field_chain_get(
-        &mut self,
-        base_name: Spur,
-        fields: &[Spur],
-    ) -> Result<u8> {
+    pub(super) fn emit_field_chain_get(&mut self, base_name: Spur, fields: &[Spur]) -> Result<u8> {
         let mut cur_reg = self.emit_identifier(base_name)?;
         let prev_temp = cur_reg; // track if we need to free the previous temp
 
@@ -200,7 +195,10 @@ impl<'a> Compiler<'a> {
         base_name: Spur,
         fields: &[Spur],
     ) -> Result<()> {
-        assert!(!fields.is_empty(), "field chain must have at least one field");
+        assert!(
+            !fields.is_empty(),
+            "field chain must have at least one field"
+        );
 
         let base_reg = self.emit_identifier(base_name)?;
 
@@ -259,7 +257,9 @@ impl<'a> Compiler<'a> {
         let label = self.frame_mut().labels.alloc();
         let ip = self.chunk().end();
         emit!(self.chunk_mut(), TEST, reg, wide 0);
-        self.frame_mut().labels.add_ref(label, ip, crate::compiler::label::RefKind::Test);
+        self.frame_mut()
+            .labels
+            .add_ref(label, ip, crate::compiler::label::RefKind::Test);
         label
     }
 
@@ -267,14 +267,18 @@ impl<'a> Compiler<'a> {
         let label = self.frame_mut().labels.alloc();
         let ip = self.chunk().end();
         emit!(self.chunk_mut(), JMP, wide 0);
-        self.frame_mut().labels.add_ref(label, ip, crate::compiler::label::RefKind::Jmp);
+        self.frame_mut()
+            .labels
+            .add_ref(label, ip, crate::compiler::label::RefKind::Jmp);
         label
     }
 
     pub(super) fn emit_forward_jmp_to(&mut self, label: Label) {
         let ip = self.chunk().end();
         emit!(self.chunk_mut(), JMP, wide 0);
-        self.frame_mut().labels.add_ref(label, ip, crate::compiler::label::RefKind::Jmp);
+        self.frame_mut()
+            .labels
+            .add_ref(label, ip, crate::compiler::label::RefKind::Jmp);
     }
 
     pub(super) fn emit_here_label(&mut self) -> Label {

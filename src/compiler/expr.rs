@@ -181,13 +181,11 @@ impl<'a> Compiler<'a> {
         self.exit_frame()?;
 
         let anon_id = self.next_anon_id();
-        let fn_id = self
-            .funcs
-            .register(
-                FnLookupKey::Anon(anon_id),
-                crate::functions::FnEntry::ChunkIdx(chunk_idx),
-                sig,
-            );
+        let fn_id = self.funcs.register(
+            FnLookupKey::Anon(anon_id),
+            crate::functions::FnEntry::ChunkIdx(chunk_idx),
+            sig,
+        );
         let upvalue_count = upvalues.len() as u16;
         let proto_idx = self.chunk_mut().add_constant(Value::FnProto {
             fn_id,
@@ -204,7 +202,6 @@ impl<'a> Compiler<'a> {
             Ok(reg)
         }
     }
-
 
     // ── Bytecode emission helpers (now in emit.rs) ──
 
@@ -297,17 +294,16 @@ impl<'a> Compiler<'a> {
     }
 
     /// Parse `Name { field: expr, ... }` struct construction.
-    fn parse_struct_literal_named(
-        &mut self,
-        struct_name: Spur,
-        target: Option<u8>,
-    ) -> Result<u8> {
+    fn parse_struct_literal_named(&mut self, struct_name: Spur, target: Option<u8>) -> Result<u8> {
         let def_id = self
             .type_registry
             .resolve_struct(struct_name)
             .ok_or_else(|| CompileError::UndefinedVariable {
                 name: self.intern_resolve(&struct_name).to_string(),
-                diag: (self.prev_span().clone(), "undefined struct type".to_string()),
+                diag: (
+                    self.prev_span().clone(),
+                    "undefined struct type".to_string(),
+                ),
             })?;
 
         let def = self.type_registry.get_struct(def_id).clone();
@@ -364,10 +360,7 @@ impl<'a> Compiler<'a> {
                     token: Token::Identifier(field_name),
                     diag: (
                         self.prev_span().clone(),
-                        format!(
-                            "duplicate field '{}'",
-                            self.intern_resolve(&field_name),
-                        ),
+                        format!("duplicate field '{}'", self.intern_resolve(&field_name),),
                     ),
                 });
             }
@@ -414,7 +407,10 @@ impl<'a> Compiler<'a> {
             .resolve_struct(struct_name)
             .ok_or_else(|| CompileError::UndefinedVariable {
                 name: self.intern_resolve(&struct_name).to_string(),
-                diag: (self.prev_span().clone(), "undefined struct type".to_string()),
+                diag: (
+                    self.prev_span().clone(),
+                    "undefined struct type".to_string(),
+                ),
             })?;
 
         let def = self.type_registry.get_struct(def_id).clone();

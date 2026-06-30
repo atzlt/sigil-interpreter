@@ -319,9 +319,7 @@ fn test_closure_expr_captures_outer() {
 #[test]
 fn test_closure_expr_passed_as_arg() {
     assert_eq!(
-        run_program(
-            r"fn apply(f, x) { return f(x); } return apply(fn(n) n + 1, 5);"
-        ),
+        run_program(r"fn apply(f, x) { return f(x); } return apply(fn(n) n + 1, 5);"),
         Value::Number(6.0)
     );
 }
@@ -338,7 +336,10 @@ fn test_closure_expr_returned() {
 
 #[test]
 fn test_closure_expr_no_params() {
-    assert_eq!(run_program(r"let f = fn() 42; return f();"), Value::Number(42.0));
+    assert_eq!(
+        run_program(r"let f = fn() 42; return f();"),
+        Value::Number(42.0)
+    );
 }
 
 #[test]
@@ -393,18 +394,13 @@ fn test_fn_returned_from_function_captures_param() {
 
 #[test]
 fn test_closure_expr_called_directly() {
-    assert_eq!(
-        run_program(r"return (fn(x) x + 1)(5);"),
-        Value::Number(6.0)
-    );
+    assert_eq!(run_program(r"return (fn(x) x + 1)(5);"), Value::Number(6.0));
 }
 
 #[test]
 fn test_closure_expr_as_arg_to_closure() {
     assert_eq!(
-        run_program(
-            r"fn twice(f, x) { return f(f(x)); } return twice(fn(n) n * 2, 5);"
-        ),
+        run_program(r"fn twice(f, x) { return f(f(x)); } return twice(fn(n) n * 2, 5);"),
         Value::Number(20.0)
     );
 }
@@ -564,7 +560,7 @@ fn test_overload_no_matching_error() {
         "struct Vec2 { x: Number, y: Number } \
          fn consume(v: Vec2) { return 1; } \
          fn consume(s: String) { return 2; } \
-         return consume(42);"
+         return consume(42);",
     );
     assert!(matches!(err, RuntimeError::NoMatchingOverload { .. }));
 }
