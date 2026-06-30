@@ -2,6 +2,9 @@ use smallvec::SmallVec;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
+use crate::types::TypeId;
+use crate::vm::Heap;
+
 #[derive(Debug, Clone, Default)]
 pub enum Value {
     #[default]
@@ -93,6 +96,21 @@ impl Value {
         match self {
             Value::Number(n) => *n,
             _ => 0.0,
+        }
+    }
+
+    pub fn type_id(&self, heap: &Heap) -> TypeId {
+        match self {
+            Value::Nil => TypeId::Nil,
+            Value::Bool(_) => TypeId::Bool,
+            Value::Number(_) => TypeId::Number,
+            Value::String(_) => TypeId::String,
+            Value::Fn(_) | Value::Closure { .. } | Value::FnProto { .. } => {
+                TypeId::Fn
+            }
+            Value::Struct(key) => {
+                TypeId::Struct(heap.struct_ref(*key).def_id)
+            }
         }
     }
 }

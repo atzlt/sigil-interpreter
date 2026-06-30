@@ -1,10 +1,20 @@
+@intrinsic fn print(x);
+
 struct Vec2 { x: Number, y: Number }
 
-@lang_item(mul)
-fn add_vec(v, w) {
+@lang_item(add)
+fn add_vec(v: Vec2, w: Vec2) {
     return Vec2(v.x + w.x, v.y + w.y);
+}
+@lang_item(add)
+fn add_num(v: Vec2, w: Number) {
+    return Vec2(v.x + w, v.y + w);
 }
 
 let a = Vec2(1, 2);
 let b = Vec2(3, 4);
-return (a * b).y;
+print((a + b).y);
+
+let a = Vec2(1, 2);
+let x = 3;
+print((a + x).y);

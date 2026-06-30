@@ -4,12 +4,20 @@ use ahash::AHashMap;
 use lasso::Spur;
 use strum_macros::{Display, FromRepr};
 
+use crate::types::{TypeId};
 use crate::value::Value;
 use crate::vm::heap::Heap;
 
-/// Context passed to intrinsic functions at runtime.
-/// Currently contains only the heap (for struct field access, value comparison, etc.).
-/// Will be extended as more VM state needs to be exposed to intrinsics.
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct FnTypeSig {
+    pub param_types: Vec<TypeId>,
+}
+
+#[derive(Debug, Clone)]
+struct FnOverloads {
+    overloads: AHashMap<FnTypeSig, usize>,
+}
+
 pub struct IntrinsicContext<'h> {
     pub heap: &'h Heap,
 }
@@ -66,7 +74,7 @@ pub enum FnLookupKey {
     LangItem(LangItem),
     Name(Spur),
     External(String),
-    /// Anonymous closure — auto-generated numeric ID.
+    /// Anonymous closure
     Anon(u32),
 }
 
@@ -74,7 +82,7 @@ impl fmt::Display for FnLookupKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             FnLookupKey::LangItem(item) => write!(f, "lang-item({item})"),
-            FnLookupKey::Name(spur) => write!(f, "ƒ_{spur:?}"),
+            FnLookupKey::Name(spur) => write!(f, "<fn#{spur:?}>"),
             FnLookupKey::External(name) => write!(f, "{name}"),
             FnLookupKey::Anon(id) => write!(f, "<closure#{id}>"),
         }
@@ -89,42 +97,96 @@ pub enum FnEntry {
 
 #[derive(Debug, Default)]
 pub struct FunctionRegistry {
-    keys: AHashMap<FnLookupKey, usize>,
-    backward: Vec<FnLookupKey>,
+    keys: AHashMap<FnLookupKey, FnOverloads>,
+    backward: Vec<FnLookupKey>, // backward queries lookup key from entry id
     entries: Vec<FnEntry>,
 }
 
 impl FunctionRegistry {
-    pub fn register_intrinsic(&mut self, name: FnLookupKey, func: IntrinsicFn) {
-        self.entries.push(FnEntry::Intrinsic(func));
-        self.backward.push(name.clone());
+    pub fn register(&mut self, name: FnLookupKey, entry: FnEntry, signature: FnTypeSig) -> usize {
+        self.entries.push(entry);
         let id = self.entries.len() - 1;
-        self.keys.insert(name, id);
-    }
+        self.backward.push(name.clone());
 
-    pub fn register(&mut self, name: FnLookupKey, idx: usize) -> usize {
-        self.entries.push(FnEntry::ChunkIdx(idx));
-        self.backward.push(name.clone());
-        let id = self.entries.len() - 1;
-        self.keys.insert(name, id);
+        if let Some(overloads) = self.get_overloads_mut(&name) {
+            overloads.overloads.insert(signature, id);
+        } else {
+            let mut overloads = FnOverloads {
+                overloads: AHashMap::new(),
+            };
+            overloads.overloads.insert(signature, id);
+            self.keys.insert(name.clone(), overloads);
+        }
         id
     }
 
-    pub fn get_id(&self, name: &FnLookupKey) -> Option<&usize> {
+    fn get_overloads(&self, name: &FnLookupKey) -> Option<&FnOverloads> {
         self.keys.get(name)
+    }
+
+    fn get_overloads_mut(&mut self, name: &FnLookupKey) -> Option<&mut FnOverloads> {
+        self.keys.get_mut(name)
     }
 
     pub fn get(&self, id: &usize) -> Option<&FnEntry> {
         self.entries.get(*id)
     }
 
-    pub fn resolve_id(&self, id: usize) -> FnLookupKey {
-        self.backward[id].clone()
+    pub fn resolve_id(&self, id: usize) -> &FnLookupKey {
+        &self.backward[id]
+    }
+
+    pub fn get_static_id(&self, name: &FnLookupKey) -> Option<usize> {
+        self.get_overloads(name)
+            .and_then(|ov| ov.overloads.values().next())
+            .copied()
+    }
+
+    /// Runtime overload resolution by least-cost matching:
+    ///   Exact match:   cost 0
+    ///   Subtype match: cost 1
+    ///   Type mismatch: disqualifies
+    /// The overload with the lowest total cost wins.
+    pub fn resolve_overload(
+        &self,
+        name: &FnLookupKey,
+        args: &[&Value],
+        heap: &Heap,
+    ) -> Option<usize> {
+        let overloads = self.get_overloads(name)?;
+        let arg_types: Vec<TypeId> = args.iter().map(|v| v.type_id(heap)).collect();
+
+        let mut best_cost: u32 = u32::MAX;
+        let mut best_id: usize = 0;
+
+        for (sig, &fn_id) in &overloads.overloads {
+            if sig.param_types.len() != arg_types.len() {
+                continue;
+            }
+            let mut cost: u32 = 0;
+            let mut ok = true;
+            for (p, a) in sig.param_types.iter().zip(arg_types.iter()) {
+                if p == a {
+                    // exact match: cost 0
+                } else if *p == TypeId::Any {
+                    cost += 1; // wildcard match
+                } else {
+                    ok = false;
+                    break;
+                }
+            }
+            if ok && cost < best_cost {
+                best_cost = cost;
+                best_id = fn_id;
+            }
+        }
+        if best_cost < u32::MAX { Some(best_id) } else { None }
     }
 
     pub fn with_std() -> Self {
         use self::FnLookupKey::*;
         use self::LangItem::*;
+        use self::FnEntry::Intrinsic;
         let mut reg = Self::default();
 
         fn add(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
@@ -190,33 +252,46 @@ impl FunctionRegistry {
             Value::Nil
         }
 
-        reg.register_intrinsic(LangItem(Add), add);
-        reg.register_intrinsic(External("add".into()), add);
-        reg.register_intrinsic(LangItem(Sub), sub);
-        reg.register_intrinsic(External("sub".into()), sub);
-        reg.register_intrinsic(LangItem(Mul), mul);
-        reg.register_intrinsic(External("mul".into()), mul);
-        reg.register_intrinsic(LangItem(Div), div);
-        reg.register_intrinsic(External("div".into()), div);
-        reg.register_intrinsic(LangItem(Rem), rem);
-        reg.register_intrinsic(External("rem".into()), rem);
-        reg.register_intrinsic(LangItem(Neg), neg);
-        reg.register_intrinsic(External("neg".into()), neg);
-        reg.register_intrinsic(LangItem(Not), not);
-        reg.register_intrinsic(External("not".into()), not);
-        reg.register_intrinsic(LangItem(Eq), eq);
-        reg.register_intrinsic(External("eq".into()), eq);
-        reg.register_intrinsic(LangItem(Neq), neq);
-        reg.register_intrinsic(External("neq".into()), neq);
-        reg.register_intrinsic(LangItem(Lt), lt);
-        reg.register_intrinsic(External("lt".into()), lt);
-        reg.register_intrinsic(LangItem(Le), le);
-        reg.register_intrinsic(External("le".into()), le);
-        reg.register_intrinsic(LangItem(Gt), gt);
-        reg.register_intrinsic(External("gt".into()), gt);
-        reg.register_intrinsic(LangItem(Ge), ge);
-        reg.register_intrinsic(External("ge".into()), ge);
-        reg.register_intrinsic(External("print".into()), print);
+        let num_bin_sig = FnTypeSig {
+            param_types: vec![TypeId::Number, TypeId::Number],
+        };
+        let num_un_sig = FnTypeSig {
+            param_types: vec![TypeId::Number],
+        };
+        let any_un_sig = FnTypeSig {
+            param_types: vec![TypeId::Any],
+        };
+        let any_bin_sig = FnTypeSig {
+            param_types: vec![TypeId::Any, TypeId::Any],
+        };
+
+        reg.register(LangItem(Add), Intrinsic(add), num_bin_sig.clone());
+        reg.register(External("add".into()), Intrinsic(add), num_bin_sig.clone());
+        reg.register(LangItem(Sub), Intrinsic(sub), num_bin_sig.clone());
+        reg.register(External("sub".into()), Intrinsic(sub), num_bin_sig.clone());
+        reg.register(LangItem(Mul), Intrinsic(mul), num_bin_sig.clone());
+        reg.register(External("mul".into()), Intrinsic(mul), num_bin_sig.clone());
+        reg.register(LangItem(Div), Intrinsic(div), num_bin_sig.clone());
+        reg.register(External("div".into()), Intrinsic(div), num_bin_sig.clone());
+        reg.register(LangItem(Rem), Intrinsic(rem), num_bin_sig.clone());
+        reg.register(External("rem".into()), Intrinsic(rem), num_bin_sig.clone());
+        reg.register(LangItem(Neg), Intrinsic(neg), num_un_sig.clone());
+        reg.register(External("neg".into()), Intrinsic(neg), num_un_sig.clone());
+        reg.register(LangItem(Not), Intrinsic(not), any_un_sig.clone());
+        reg.register(External("not".into()), Intrinsic(not), any_un_sig.clone());
+        reg.register(LangItem(Eq), Intrinsic(eq), any_bin_sig.clone());
+        reg.register(External("eq".into()), Intrinsic(eq), any_bin_sig.clone());
+        reg.register(LangItem(Neq), Intrinsic(neq), any_bin_sig.clone());
+        reg.register(External("neq".into()), Intrinsic(neq), any_bin_sig.clone());
+        reg.register(LangItem(Lt), Intrinsic(lt), num_bin_sig.clone());
+        reg.register(External("lt".into()), Intrinsic(lt), num_bin_sig.clone());
+        reg.register(LangItem(Le), Intrinsic(le), num_bin_sig.clone());
+        reg.register(External("le".into()), Intrinsic(le), num_bin_sig.clone());
+        reg.register(LangItem(Gt), Intrinsic(gt), num_bin_sig.clone());
+        reg.register(External("gt".into()), Intrinsic(gt), num_bin_sig.clone());
+        reg.register(LangItem(Ge), Intrinsic(ge), num_bin_sig.clone());
+        reg.register(External("ge".into()), Intrinsic(ge), num_bin_sig.clone());
+        reg.register(External("print".into()), Intrinsic(print), any_un_sig.clone());
         reg
     }
 }

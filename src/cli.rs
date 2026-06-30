@@ -118,6 +118,14 @@ fn report_runtime_error(source: &str, err: &RuntimeError) {
                 .eprint(&src)
                 .unwrap();
         }
+        RuntimeError::NoMatchingOverload { name, span } => {
+            Report::build(ReportKind::Error, span.clone())
+                .with_message(format!("no matching overload for '{name}'"))
+                .with_label(Label::new(span.clone()).with_message("call does not match any function signature"))
+                .finish()
+                .eprint(&src)
+                .unwrap();
+        }
     }
 }
 

@@ -408,3 +408,163 @@ fn test_closure_expr_as_arg_to_closure() {
         Value::Number(20.0)
     );
 }
+
+// ── function overloading ──
+
+#[test]
+fn test_overload_by_type() {
+    assert_eq!(
+        run_program(
+            "fn add(a: Number, b: Number) { return a + b; } \
+             fn add(a: Bool, b: Bool) { return a && b; } \
+             return add(1, 2);"
+        ),
+        Value::Number(3.0)
+    );
+}
+
+#[test]
+fn test_overload_struct_disambiguated() {
+    assert_eq!(
+        run_program(
+            "struct Vec2 { x: Number, y: Number } \
+             struct Vec3 { x: Number, y: Number, z: Number } \
+             fn len(v: Vec2) { return v.x + v.y; } \
+             fn len(v: Vec3) { return v.x + v.y + v.z; } \
+             return len(Vec2(1, 2));"
+        ),
+        Value::Number(3.0)
+    );
+}
+
+#[test]
+fn test_overload_struct_other_selected() {
+    assert_eq!(
+        run_program(
+            "struct Vec2 { x: Number, y: Number } \
+             struct Vec3 { x: Number, y: Number, z: Number } \
+             fn len(v: Vec2) { return v.x + v.y; } \
+             fn len(v: Vec3) { return v.x + v.y + v.z; } \
+             return len(Vec3(10, 20, 30));"
+        ),
+        Value::Number(60.0)
+    );
+}
+
+#[test]
+fn test_overload_untyped_fallback() {
+    assert_eq!(
+        run_program(
+            r#"fn foo(a: Number) { return 1; }
+             fn foo(a: Bool) { return 2; }
+             fn foo(a) { return 99; }
+             let s = "hi"; return foo(s);"#
+        ),
+        Value::Number(99.0)
+    );
+}
+
+#[test]
+fn test_overload_exact_match_wins_over_untyped() {
+    assert_eq!(
+        run_program(
+            "fn bar(a: Number) { return 10; }
+             fn bar(a) { return 20; }
+             return bar(5);"
+        ),
+        Value::Number(10.0)
+    );
+}
+
+#[test]
+fn test_overload_arity_mismatch_skipped() {
+    // 2-arg Number overload skipped, 1-arg Any matches
+    assert_eq!(
+        run_program(
+            "fn baz(a: Number, b: Number) { return 1; } \
+             fn baz(a) { return 99; } \
+             return baz(42);"
+        ),
+        Value::Number(99.0)
+    );
+}
+
+#[test]
+fn test_overload_same_param_types_overwrites() {
+    // Last definition with same types wins
+    assert_eq!(
+        run_program(
+            "fn dup(a: Number) { return 1; } \
+             fn dup(a: Number) { return 2; } \
+             return dup(0);"
+        ),
+        Value::Number(2.0)
+    );
+}
+
+// ── operator overloading via lang items ──
+
+#[test]
+fn test_lang_item_overload_struct_add() {
+    assert_eq!(
+        run_program(
+            "struct Vec2 { x: Number, y: Number } \
+             @lang_item(add) fn vec_add(a: Vec2, b: Vec2) { return Vec2(a.x + b.x, a.y + b.y); } \
+             let v = Vec2(1, 2) + Vec2(3, 4); return v.x;"
+        ),
+        Value::Number(4.0)
+    );
+}
+
+#[test]
+fn test_lang_item_overload_still_has_number_add() {
+    // Adding @lang_item for Vec2 should not break Number add
+    assert_eq!(
+        run_program(
+            "struct Vec2 { x: Number, y: Number } \
+             @lang_item(add) fn vec_add(a: Vec2, b: Vec2) { return Vec2(a.x + b.x, a.y + b.y); } \
+             return 1 + 2;"
+        ),
+        Value::Number(3.0)
+    );
+}
+
+// ── overloaded functions in closures ──
+
+#[test]
+fn test_overload_called_inside_closure() {
+    assert_eq!(
+        run_program(
+            "fn f(a: Number) { return a * 2; } \
+             fn f(a: String) { return a; } \
+             let g = fn(x) f(x); return g(5);"
+        ),
+        Value::Number(10.0)
+    );
+}
+
+#[test]
+fn test_overload_with_closure_arg() {
+    assert_eq!(
+        run_program(
+            "struct Vec2 { x: Number, y: Number } \
+             fn apply(v: Vec2, op: Fn) { return op(v.x, v.y); } \
+             fn apply(a: Number, op: Fn) { return op(a); } \
+             let v = Vec2(3, 4); return apply(v, fn(a,b) a + b);"
+        ),
+        Value::Number(7.0)
+    );
+}
+
+// ── runtime error: no matching overload ──
+
+#[test]
+fn test_overload_no_matching_error() {
+    let err = run_program_err(
+        "struct Vec2 { x: Number, y: Number } \
+         fn consume(v: Vec2) { return 1; } \
+         fn consume(s: String) { return 2; } \
+         return consume(42);"
+    );
+    assert!(matches!(err, RuntimeError::NoMatchingOverload { .. }));
+}

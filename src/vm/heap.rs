@@ -23,6 +23,12 @@ pub struct Heap {
     pub structs: Slab<StructObject>,
 }
 
+impl Default for Heap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Heap {
     pub fn new() -> Self {
         Self {

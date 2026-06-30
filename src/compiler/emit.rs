@@ -3,7 +3,7 @@ use lasso::Spur;
 use crate::{
     compiler::{
         compile::{CompileError, Compiler, Result}, label::Label,
-    }, emit, emit_args, functions::FnLookupKey, value::Value,
+    }, emit, emit_args, functions::FnLookupKey, types::StructDef, value::Value,
 };
 
 // ── Value constructors ──
@@ -66,7 +66,7 @@ impl<'a> Compiler<'a> {
         args: &[u8],
         target: Option<u8>,
     ) -> Result<u8> {
-        let fn_id = *self
+        let fn_id = self
             .resolve_fn(&fun)
             .ok_or_else(|| CompileError::UndefinedFunction {
                 name: fun.to_string(),
@@ -135,7 +135,7 @@ impl<'a> Compiler<'a> {
         &mut self,
         dst: u8,
         def_id: u16,
-        def: &crate::compiler::StructDef,
+        def: &StructDef,
         regs: &[u8],
     ) {
         emit!(self.chunk_mut(), NEWSTRUCT, dst, wide def_id, regs.len());

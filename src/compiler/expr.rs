@@ -6,7 +6,7 @@ use crate::{
         lexer::Token,
     },
     emit, emit_args,
-    functions::{FnLookupKey, LangItem},
+    functions::{FnLookupKey, FnTypeSig, LangItem},
     value::Value,
 };
 
@@ -161,8 +161,12 @@ impl<'a> Compiler<'a> {
 
     fn parse_closure_expr(&mut self, target: Option<u8>) -> Result<u8> {
         let args = self.parse_arglist()?;
+        let arg_names: Vec<Spur> = args.iter().map(|(n, _)| *n).collect();
+        let sig = FnTypeSig {
+            param_types: args.iter().map(|(_, t)| *t).collect(),
+        };
 
-        let chunk_idx = self.new_frame(&args);
+        let chunk_idx = self.new_frame(&arg_names);
 
         if self.current() == Token::LBrace {
             self.parse_block()?;
@@ -179,7 +183,11 @@ impl<'a> Compiler<'a> {
         let anon_id = self.next_anon_id();
         let fn_id = self
             .funcs
-            .register(FnLookupKey::Anon(anon_id), chunk_idx);
+            .register(
+                FnLookupKey::Anon(anon_id),
+                crate::functions::FnEntry::ChunkIdx(chunk_idx),
+                sig,
+            );
         let upvalue_count = upvalues.len() as u16;
         let proto_idx = self.chunk_mut().add_constant(Value::FnProto {
             fn_id,

@@ -1,139 +1,39 @@
+mod common;
+
+use common::{compile_err, run_program};
 use sigil_interpreter::{
     compiler::{CompileError, compile_program_with},
-    functions::{FnLookupKey, FunctionRegistry, IntrinsicContext, LangItem, IntrinsicFn},
+    functions::{FnEntry, FnLookupKey, FnTypeSig, FunctionRegistry, IntrinsicContext, IntrinsicFn},
+    types::TypeId,
     value::Value,
-    vm::{Chunk, VM},
+    vm::VM,
 };
 
-fn mk_intrinsic(name: &str, f: IntrinsicFn) -> (FnLookupKey, IntrinsicFn) {
-    (FnLookupKey::External(name.into()), f)
-}
-
-fn mk_lang_item(
-    item: LangItem,
-    f: IntrinsicFn,
-) -> (FnLookupKey, IntrinsicFn) {
-    (FnLookupKey::LangItem(item), f)
-}
-
-fn registry(intrinsics: &[(FnLookupKey, IntrinsicFn)]) -> FunctionRegistry {
+/// Build a custom `FunctionRegistry` with the given intrinsics.
+fn custom_registry(entries: &[(&str, IntrinsicFn, Vec<TypeId>)]) -> FunctionRegistry {
     let mut reg = FunctionRegistry::default();
-    for (key, f) in intrinsics {
-        reg.register_intrinsic(key.clone(), *f);
+    for &(name, func, ref types) in entries {
+        reg.register(
+            FnLookupKey::External(name.into()),
+            FnEntry::Intrinsic(func),
+            FnTypeSig { param_types: types.clone() },
+        );
     }
     reg
 }
 
 fn run_with(source: &str, reg: FunctionRegistry) -> Value {
     let (chunks, funcs) = compile_program_with(source, reg).unwrap();
-    print_chunks(&chunks);
     let mut vm = VM::default();
     vm.run(&chunks, &funcs).unwrap()
 }
 
-fn run_with_err(source: &str, reg: FunctionRegistry) -> CompileError {
-    compile_program_with(source, reg).unwrap_err().first()
-}
-
-fn print_chunks(chunks: &[Chunk]) {
-    chunks.iter().enumerate().for_each(|(i, c)| {
-        println!("Chunk #{i} =====================================================");
-        println!("{c}");
-    });
-    println!("Program end ==================================================");
-}
-
-// ── helpers: intrinsic functions ──
-
-fn add(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
-    Value::Number(args[0].as_num() + args[1].as_num())
-}
-
-fn sub(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
-    Value::Number(args[0].as_num() - args[1].as_num())
-}
-
-fn mul(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
-    Value::Number(args[0].as_num() * args[1].as_num())
-}
-
-fn div(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
-    Value::Number(args[0].as_num() / args[1].as_num())
-}
-
-fn neg(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
-    Value::Number(-args[0].as_num())
-}
-
-fn not(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
-    Value::Bool(!args[0].is_truthy())
-}
-
-fn eq(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
-    Value::Bool(args[0] == args[1])
-}
-
-fn neq(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
-    Value::Bool(args[0] != args[1])
-}
-
-fn lt(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
-    Value::Bool(args[0].as_num() < args[1].as_num())
-}
-
-fn le(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
-    Value::Bool(args[0].as_num() <= args[1].as_num())
-}
-
-fn gt(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
-    Value::Bool(args[0].as_num() > args[1].as_num())
-}
-
-fn ge(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
-    Value::Bool(args[0].as_num() >= args[1].as_num())
-}
-
-fn rem(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
-    Value::Number(args[0].as_num() % args[1].as_num())
-}
-
-fn std_registry() -> FunctionRegistry {
-    registry(&[
-        mk_lang_item(LangItem::Add, add),
-        mk_intrinsic("add", add),
-        mk_lang_item(LangItem::Sub, sub),
-        mk_intrinsic("sub", sub),
-        mk_lang_item(LangItem::Mul, mul),
-        mk_intrinsic("mul", mul),
-        mk_lang_item(LangItem::Div, div),
-        mk_intrinsic("div", div),
-        mk_lang_item(LangItem::Rem, rem),
-        mk_intrinsic("rem", rem),
-        mk_lang_item(LangItem::Neg, neg),
-        mk_intrinsic("neg", neg),
-        mk_lang_item(LangItem::Not, not),
-        mk_intrinsic("not", not),
-        mk_lang_item(LangItem::Eq, eq),
-        mk_intrinsic("eq", eq),
-        mk_lang_item(LangItem::Neq, neq),
-        mk_intrinsic("neq", neq),
-        mk_lang_item(LangItem::Lt, lt),
-        mk_intrinsic("lt", lt),
-        mk_lang_item(LangItem::Le, le),
-        mk_intrinsic("le", le),
-        mk_lang_item(LangItem::Gt, gt),
-        mk_intrinsic("gt", gt),
-        mk_lang_item(LangItem::Ge, ge),
-        mk_intrinsic("ge", ge),
-    ])
-}
-
-// ── @intrinsic tests ──
+// ── @intrinsic tests (powered by built-in std intrinsics) ──
 
 #[test]
 fn test_intrinsic_call() {
     assert_eq!(
-        run_with("@intrinsic fn add(a, b); return add(1, 2);", std_registry()),
+        run_program("@intrinsic fn add(a, b); return add(1, 2);"),
         Value::Number(3.0)
     );
 }
@@ -141,7 +41,7 @@ fn test_intrinsic_call() {
 #[test]
 fn test_intrinsic_unary() {
     assert_eq!(
-        run_with("@intrinsic fn neg(x); return neg(42);", std_registry()),
+        run_program("@intrinsic fn neg(x); return neg(42);"),
         Value::Number(-42.0)
     );
 }
@@ -149,9 +49,8 @@ fn test_intrinsic_unary() {
 #[test]
 fn test_intrinsic_expression() {
     assert_eq!(
-        run_with(
-            "@intrinsic fn add(a, b); @intrinsic fn mul(a, b); return mul(add(2, 3), 4);",
-            std_registry()
+        run_program(
+            "@intrinsic fn add(a, b); @intrinsic fn mul(a, b); return mul(add(2, 3), 4);"
         ),
         Value::Number(20.0)
     );
@@ -160,9 +59,8 @@ fn test_intrinsic_expression() {
 #[test]
 fn test_intrinsic_chained() {
     assert_eq!(
-        run_with(
-            "@intrinsic fn sub(a, b); @intrinsic fn neg(x); return sub(neg(5), 3);",
-            std_registry()
+        run_program(
+            "@intrinsic fn sub(a, b); @intrinsic fn neg(x); return sub(neg(5), 3);"
         ),
         Value::Number(-8.0)
     );
@@ -170,16 +68,13 @@ fn test_intrinsic_chained() {
 
 #[test]
 fn test_intrinsic_undefined() {
-    let reg = registry(&[mk_intrinsic("add", add)]);
-    let err = run_with_err("@intrinsic fn nonexistent(x);", reg);
+    let err = compile_err("@intrinsic fn nonexistent(x);");
     assert!(matches!(err, CompileError::UndefinedFunction { .. }));
 }
 
 #[test]
 fn test_intrinsic_missing_semicolon() {
-    let reg = registry(&[mk_intrinsic("add", add)]);
-    let err = run_with_err("@intrinsic fn add(a, b) { }", reg);
-    dbg!(&err);
+    let err = compile_err("@intrinsic fn add(a, b) { }");
     assert!(matches!(err, CompileError::Unexpected { .. }));
 }
 
@@ -188,10 +83,7 @@ fn test_intrinsic_missing_semicolon() {
 #[test]
 fn test_lang_item_call_by_name() {
     assert_eq!(
-        run_with(
-            r"@lang_item(neg) fn negate(x) { return 0 - x; } return negate(5);",
-            std_registry()
-        ),
+        run_program(r"@lang_item(neg) fn negate(x) { return 0 - x; } return negate(5);"),
         Value::Number(-5.0)
     );
 }
@@ -200,22 +92,16 @@ fn test_lang_item_call_by_name() {
 fn test_lang_item_overrides_operator() {
     // -10 calls LangItem::Neg, which now calls negate (returns 0 - x)
     assert_eq!(
-        run_with(
-            r"@lang_item(neg) fn negate(x) { return 0 - x; } return -10;",
-            std_registry()
-        ),
+        run_program(r"@lang_item(neg) fn negate(x) { return 0 - x; } return -10;"),
         Value::Number(-10.0)
     );
 }
 
 #[test]
 fn test_lang_item_add_override() {
-    // + now calls plus, which does a - b instead
+    // + now calls plus (same Number signature overwrites built-in)
     assert_eq!(
-        run_with(
-            r"@lang_item(add) fn plus(a, b) { return a - b; } return 1 + 2;",
-            std_registry()
-        ),
+        run_program(r"@lang_item(add) fn plus(a: Number, b: Number) { return a - b; } return 1 + 2;"),
         Value::Number(-1.0)
     );
 }
@@ -223,9 +109,8 @@ fn test_lang_item_add_override() {
 #[test]
 fn test_lang_item_and_call_by_name() {
     assert_eq!(
-        run_with(
-            r"@lang_item(add) fn plus(a, b) { return a - b; } return plus(10, 3);",
-            std_registry()
+        run_program(
+            r"@lang_item(add) fn plus(a, b) { return a - b; } return plus(10, 3);"
         ),
         Value::Number(7.0)
     );
@@ -237,10 +122,7 @@ fn test_lang_item_and_call_by_name() {
 fn test_lang_item_with_intrinsic() {
     // @intrinsic means lookup by name, @lang_item registers alias
     assert_eq!(
-        run_with(
-            "@lang_item(neg) @intrinsic fn neg(x); return -42;",
-            std_registry()
-        ),
+        run_program("@lang_item(neg) @intrinsic fn neg(x); return -42;"),
         Value::Number(-42.0)
     );
 }
@@ -248,11 +130,15 @@ fn test_lang_item_with_intrinsic() {
 #[test]
 fn test_intrinsic_only_does_not_register_lang_item() {
     // @intrinsic without @lang_item should NOT affect operators
-    let mut reg = std_registry();
-    // Add a custom intrinsic that tracks if it was called
-    reg.register_intrinsic(FnLookupKey::External("my_add".into()), add);
+    fn my_add(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
+        Value::Number(args[0].as_num() + args[1].as_num())
+    }
+    let reg = custom_registry(&[(
+        "my_add", my_add as IntrinsicFn,
+        vec![TypeId::Any, TypeId::Any],
+    )]);
     assert_eq!(
-        run_with("@intrinsic fn my_add(a, b); return my_add(5, 7);", reg,),
+        run_with("@intrinsic fn my_add(a, b); return my_add(5, 7);", reg),
         Value::Number(12.0)
     );
 }
@@ -261,23 +147,27 @@ fn test_intrinsic_only_does_not_register_lang_item() {
 
 #[test]
 fn test_lang_item_unknown_name() {
-    let err = run_with_err("@lang_item(blah) fn foo() { }", std_registry());
+    let err = compile_err("@lang_item(blah) fn foo() { }");
     assert!(matches!(err, CompileError::Unexpected { .. }));
 }
 
 #[test]
 fn test_unknown_modifier() {
-    let err = run_with_err("@nonsense fn foo() { }", std_registry());
+    let err = compile_err("@nonsense fn foo() { }");
     assert!(matches!(err, CompileError::Unexpected { .. }));
 }
 
 #[test]
 fn test_intrinsic_custom_name() {
-    // Register an intrinsic with a custom name, declare it in source
-    let custom = |args: &[&Value], _ctx: &IntrinsicContext| -> Value { Value::Number(args[0].as_num() * 100.0) };
-    let reg = registry(&[mk_intrinsic("make_big", custom)]);
+    fn make_big(args: &[&Value], _ctx: &IntrinsicContext) -> Value {
+        Value::Number(args[0].as_num() * 100.0)
+    }
+    let reg = custom_registry(&[(
+        "make_big", make_big as IntrinsicFn,
+        vec![TypeId::Any],
+    )]);
     assert_eq!(
-        run_with("@intrinsic fn make_big(x); return make_big(5);", reg,),
+        run_with("@intrinsic fn make_big(x); return make_big(5);", reg),
         Value::Number(500.0)
     );
 }

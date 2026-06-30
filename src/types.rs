@@ -1,7 +1,7 @@
 use ahash::AHashMap;
 use lasso::Spur;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TypeId {
     Nil,
     Bool,
@@ -9,6 +9,8 @@ pub enum TypeId {
     String,
     Fn,
     Struct(u16),
+    /// Wildcard: matches any type. Used for untyped function parameters.
+    Any,
 }
 
 /// Definition of a named struct type.
@@ -75,6 +77,7 @@ impl TypeRegistry {
             "Number" => Some(TypeId::Number),
             "String" => Some(TypeId::String),
             "Fn" => Some(TypeId::Fn),
+            "Any" => Some(TypeId::Any),
             _ => None,
         }
     }

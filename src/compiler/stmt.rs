@@ -4,11 +4,7 @@ use crate::{
     compiler::{
         compile::{CompileError, Compiler, Result},
         lexer::Token,
-        type_registry::TypeId,
-    },
-    emit, emit_args,
-    functions::{FnLookupKey, FnModifier, LangItem},
-    value::Value,
+    }, emit, emit_args, functions::{FnLookupKey, FnModifier, FnTypeSig, LangItem}, types::TypeId, value::Value,
 };
 
 type Identifier = Spur;
@@ -136,6 +132,11 @@ impl<'a> Compiler<'a> {
         };
         let args = self.parse_arglist()?;
 
+        let arg_names: Vec<Spur> = args.iter().map(|(n, _)| *n).collect();
+        let sig = FnTypeSig {
+            param_types: args.iter().map(|(_, t)| *t).collect(),
+        };
+
         let is_intrinsic = modifiers.iter().any(|m| matches!(m, FnModifier::Intrinsic));
         let lang_item = modifiers.iter().find_map(|m| match m {
             FnModifier::LangItem(item) => Some(*item),
@@ -148,12 +149,11 @@ impl<'a> Compiler<'a> {
             let id = if is_intrinsic {
                 let name_str = self.intern_resolve(&name);
                 self.funcs
-                    .get_id(&FnLookupKey::Name(name))
+                    .get_static_id(&FnLookupKey::Name(name))
                     .or_else(|| {
                         self.funcs
-                            .get_id(&FnLookupKey::External(name_str.to_string()))
+                            .get_static_id(&FnLookupKey::External(name_str.to_string()))
                     })
-                    .copied()
                     .ok_or_else(|| CompileError::UndefinedFunction {
                         name: name_str.to_string(),
                         diag: (
@@ -163,10 +163,19 @@ impl<'a> Compiler<'a> {
                     })?
             } else {
                 let chunk_idx = self.chunks.len();
+                let sig_clone = sig.clone();
                 if let Some(item) = lang_item {
-                    self.funcs.register(FnLookupKey::LangItem(item), chunk_idx);
+                    self.funcs.register(
+                        FnLookupKey::LangItem(item),
+                        crate::functions::FnEntry::ChunkIdx(chunk_idx),
+                        sig_clone,
+                    );
                 }
-                self.funcs.register(FnLookupKey::Name(name), chunk_idx)
+                self.funcs.register(
+                    FnLookupKey::Name(name),
+                    crate::functions::FnEntry::ChunkIdx(chunk_idx),
+                    sig.clone(),
+                )
             };
             self.store_global_fn(name, id)?;
         }
@@ -174,7 +183,7 @@ impl<'a> Compiler<'a> {
         if is_intrinsic {
             self.consume(&Token::Semicolon)?;
         } else {
-            let chunk_idx = self.new_frame(&args);
+            let chunk_idx = self.new_frame(&arg_names);
             self.parse_block()?;
             self.emit_safety_net()?;
 
@@ -185,16 +194,16 @@ impl<'a> Compiler<'a> {
                 let upvalues = std::mem::take(&mut self.frame_mut().upvalues);
                 self.exit_frame()?;
 
-                let fn_id = self
-                    .funcs
-                    .register(FnLookupKey::Name(name), chunk_idx);
+                let fn_id = self.funcs.register(
+                    FnLookupKey::Name(name),
+                    crate::functions::FnEntry::ChunkIdx(chunk_idx),
+                    sig,
+                );
                 let upvalue_count = upvalues.len() as u16;
-                let proto_idx = self
-                    .chunk_mut()
-                    .add_constant(Value::FnProto {
-                        fn_id,
-                        upvalue_count,
-                    });
+                let proto_idx = self.chunk_mut().add_constant(Value::FnProto {
+                    fn_id,
+                    upvalue_count,
+                });
                 self.emit_closure(name, proto_idx, &upvalues)?;
             }
         }
@@ -515,7 +524,7 @@ impl<'a> Compiler<'a> {
 }
 
 impl Compiler<'_> {
-    pub(super) fn parse_arglist(&mut self) -> Result<Vec<Identifier>> {
+    pub(super) fn parse_arglist(&mut self) -> Result<Vec<(Identifier, TypeId)>> {
         self.consume(&Token::LParen)
             .map_err(|_| CompileError::Unexpected {
                 token: self.current(),
@@ -524,10 +533,17 @@ impl Compiler<'_> {
                     "expect argument list".to_string(),
                 ),
             })?;
-        let mut args = Vec::new();
+        let mut args: Vec<(Spur, TypeId)> = Vec::new();
         while let Token::Identifier(id) = self.current() {
-            args.push(id);
+            let name = id;
             self.advance()?;
+            let ptype = if self.check(&Token::Colon) {
+                self.advance()?; // consume ':'
+                self.parse_param_type()?
+            } else {
+                TypeId::Any
+            };
+            args.push((name, ptype));
             if !self.matches(&Token::Comma)? {
                 break;
             }
@@ -541,5 +557,44 @@ impl Compiler<'_> {
                 ),
             })?;
         Ok(args)
+    }
+
+    /// Parse a type name after `:` in a parameter list. Returns the corresponding `TypeId`.
+    fn parse_param_type(&mut self) -> Result<TypeId> {
+        let type_spur = if let Token::Identifier(spur) = self.current() {
+            let s = spur;
+            self.advance()?;
+            s
+        } else {
+            return Err(CompileError::Unexpected {
+                token: self.current(),
+                diag: (
+                    self.current_span().clone(),
+                    format!("expected type name, found {}", self.current()),
+                ),
+            });
+        };
+        let name = self.intern_resolve(&type_spur);
+        match name {
+            "Nil" => Ok(TypeId::Nil),
+            "Bool" => Ok(TypeId::Bool),
+            "Number" => Ok(TypeId::Number),
+            "String" => Ok(TypeId::String),
+            "Fn" => Ok(TypeId::Fn),
+            "Any" => Ok(TypeId::Any),
+            _ => {
+                if let Some(def_id) = self.type_registry.resolve_struct(type_spur) {
+                    Ok(TypeId::Struct(def_id))
+                } else {
+                    Err(CompileError::Unexpected {
+                        token: Token::Identifier(type_spur),
+                        diag: (
+                            self.prev_span().clone(),
+                            format!("unknown type: {name}"),
+                        ),
+                    })
+                }
+            }
+        }
     }
 }

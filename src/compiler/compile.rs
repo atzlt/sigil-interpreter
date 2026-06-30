@@ -6,14 +6,14 @@ use thiserror::Error;
 
 use crate::{
     compiler::{
-        label::{LabelTracker},
+        label::LabelTracker,
         lexer::Token,
         loop_tracker::LoopTracker,
         register::RegisterTracker,
-        type_registry::TypeRegistry,
         variables::{GlobalStore, LocalsTracker},
     },
     functions::{FnLookupKey, FunctionRegistry},
+    types::TypeRegistry,
     vm::Chunk,
 };
 
@@ -349,8 +349,8 @@ impl Compiler<'_> {
         &self.chunks[self.frame().chunk_idx]
     }
 
-    pub(super) fn resolve_fn(&self, name: &FnLookupKey) -> Option<&usize> {
-        self.funcs.get_id(name)
+    pub(super) fn resolve_fn(&self, name: &FnLookupKey) -> Option<usize> {
+        self.funcs.get_static_id(name)
     }
 
     /// Allocate a unique ID for an anonymous closure.

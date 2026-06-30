@@ -26,6 +26,8 @@ pub enum RuntimeError {
     InvalidOpCode { op_byte: u8, span: Range<usize> },
     #[error("undefined function: {name}")]
     UndefinedFunction { name: String, span: Range<usize> },
+    #[error("no matching overload for '{name}'")]
+    NoMatchingOverload { name: String, span: Range<usize> },
     #[error("instruction pointer out of bounds: {ip}")]
     IpOutOfBounds { ip: usize, span: Range<usize> },
 }
@@ -134,15 +136,7 @@ impl<'c> VM<'c> {
                     let offset = self.read() as usize;
                     let argc = self.read() as usize;
 
-                    self.handle_call(
-                        chunks,
-                        registry,
-                        fn_id,
-                        argc,
-                        dst,
-                        offset,
-                        SmallVec::new(),
-                    )?;
+                    self.handle_call(chunks, registry, fn_id, argc, dst, offset, SmallVec::new())?;
                 }
                 RETURN => {
                     let reg = self.read() as usize;
@@ -182,20 +176,20 @@ impl<'c> VM<'c> {
                     let dst = self.read() as usize;
                     let proto_idx = self.read_wide() as usize;
 
-                    let (fn_id, upvalue_count) =
-                        match self.chunk().constants.get(proto_idx as u16) {
-                            Value::FnProto {
-                                fn_id,
-                                upvalue_count,
-                            } => (*fn_id, *upvalue_count as usize),
-                            _ => {
-                                let span = self.locus_span();
-                                return Err(RuntimeError::UndefinedFunction {
-                                    name: "this variable is not a function prototype".into(),
-                                    span,
-                                });
-                            }
-                        };
+                    let (fn_id, upvalue_count) = match self.chunk().constants.get(proto_idx as u16)
+                    {
+                        Value::FnProto {
+                            fn_id,
+                            upvalue_count,
+                        } => (*fn_id, *upvalue_count as usize),
+                        _ => {
+                            let span = self.locus_span();
+                            return Err(RuntimeError::UndefinedFunction {
+                                name: "this variable is not a function prototype".into(),
+                                span,
+                            });
+                        }
+                    };
 
                     let cur_offset = self.frames.last().unwrap().reg_offset;
                     let mut upvalue_indices: SmallVec<[u16; 4]> = SmallVec::new();
@@ -213,8 +207,7 @@ impl<'c> VM<'c> {
                         } else {
                             // Transitive capture — copy the upvalue key from
                             // the enclosing closure.
-                            let parent_up =
-                                self.frames.last().unwrap().closure_upvalues[index];
+                            let parent_up = self.frames.last().unwrap().closure_upvalues[index];
                             upvalue_indices.push(parent_up);
                         }
                     }
@@ -271,7 +264,9 @@ impl<'c> VM<'c> {
                     };
 
                     let sobj = self.heap.struct_ref(key);
-                    let idx = self.heap.struct_field_index(sobj.def_id, &field_name)
+                    let idx = self
+                        .heap
+                        .struct_field_index(sobj.def_id, &field_name)
                         .ok_or_else(|| RuntimeError::InvalidOpCode {
                             op_byte,
                             span: self.locus_span(),
@@ -300,7 +295,9 @@ impl<'c> VM<'c> {
                     };
 
                     let sobj = self.heap.struct_ref(key);
-                    let idx = self.heap.struct_field_index(sobj.def_id, &field_name)
+                    let idx = self
+                        .heap
+                        .struct_field_index(sobj.def_id, &field_name)
                         .ok_or_else(|| RuntimeError::InvalidOpCode {
                             op_byte,
                             span: self.locus_span(),
@@ -311,8 +308,7 @@ impl<'c> VM<'c> {
                 GETUPVAL => {
                     let dst = self.read() as usize;
                     let idx = self.read_wide() as usize;
-                    let abs_key =
-                        self.frames.last().unwrap().closure_upvalues[idx] as usize;
+                    let abs_key = self.frames.last().unwrap().closure_upvalues[idx] as usize;
                     let val = match self.heap.upvalue(abs_key as u16) {
                         Upvalue::Open(pos) => self.stack[*pos].clone(),
                         Upvalue::Closed(v) => v.clone(),
@@ -322,8 +318,7 @@ impl<'c> VM<'c> {
                 SETUPVAL => {
                     let src = self.read() as usize;
                     let idx = self.read_wide() as usize;
-                    let abs_key =
-                        self.frames.last().unwrap().closure_upvalues[idx] as usize;
+                    let abs_key = self.frames.last().unwrap().closure_upvalues[idx] as usize;
                     let val = self.stack()[src].clone();
                     match self.heap.upvalue_mut(abs_key as u16) {
                         Upvalue::Open(pos) => self.stack[*pos] = val,
@@ -338,35 +333,45 @@ impl<'c> VM<'c> {
         &mut self,
         chunks: &'c [Chunk],
         registry: &FunctionRegistry,
-        fn_id: usize,
+        static_id: usize,
         argc: usize,
         dst: usize,
         offset: usize,
         closure_upvalues: SmallVec<[u16; 4]>,
     ) -> Result<(), RuntimeError> {
-        let func = registry
-            .get(&fn_id)
-            .ok_or_else(|| RuntimeError::UndefinedFunction {
-                name: format!("{}", registry.resolve_id(fn_id)),
+        let regs = self.read_bytes(argc);
+        let reg_offset = self.frames.last().unwrap().reg_offset;
+
+        let args: SmallVec<[&Value; 4]> = regs
+            .iter()
+            .map(|&r| &self.stack[reg_offset + r as usize])
+            .collect();
+
+        let key = registry.resolve_id(static_id);
+        let resolved_id = registry
+            .resolve_overload(&key, &args, &self.heap)
+            .ok_or_else(|| RuntimeError::NoMatchingOverload {
+                name: key.to_string(),
                 span: self.locus_span(),
             })?;
 
-        let regs = self.read_bytes(argc);
+        let func = registry
+            .get(&resolved_id)
+            .ok_or_else(|| RuntimeError::UndefinedFunction {
+                name: format!("{}", key),
+                span: self.locus_span(),
+            })?;
+
         match func {
             FnEntry::Intrinsic(func) => {
-                let reg_offset = self.frames.last().unwrap().reg_offset;
-                let mut arg_refs: SmallVec<[&Value; 4]> = SmallVec::with_capacity(argc);
-                for &reg in regs {
-                    arg_refs.push(&self.stack[reg_offset + reg as usize]);
-                }
                 let ctx = IntrinsicContext { heap: &self.heap };
-                let result = func(&arg_refs, &ctx);
-                drop(arg_refs);
+                let result = func(&args, &ctx);
+                drop(args);
                 self.stack_mut()[dst] = result;
             }
             FnEntry::ChunkIdx(chunk_idx) => {
+                drop(args);
                 let chunk = &chunks[*chunk_idx];
-                let reg_offset = self.frames.last().unwrap().reg_offset;
                 for (i, &reg) in regs.iter().enumerate() {
                     let src = reg_offset + reg as usize;
                     let dst_abs = reg_offset + offset + i + 1;

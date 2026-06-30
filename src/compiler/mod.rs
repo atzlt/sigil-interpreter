@@ -6,11 +6,9 @@ mod lexer;
 mod loop_tracker;
 mod register;
 mod stmt;
-mod type_registry;
 mod variables;
 
 pub use compile::CompileError;
-pub use type_registry::{StructDef, TypeId, TypeRegistry};
 
 use crate::{functions::FunctionRegistry, vm::Chunk};
 
